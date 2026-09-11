@@ -23,8 +23,8 @@ INFO_CHANNEL_ID = os.getenv("INFO_CHANNEL_ID", "5524168471")
 ADMIN_IDS = [234591600]
 
 # API Settings
-ITUNES_BASE_URL = os.getenv("ITUNES_BASE_URL", "https://3rah.ir/mm/api")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://3rah.ir/users/index.php")
+ITUNES_BASE_URL = os.getenv("ITUNES_BASE_URL", "https://musicman.gt.tc/api")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://musicman.gt.tc/users/index.php")
 API_TOKEN = os.getenv("API_TOKEN", "change_me_to_a_secure_token")
 
 # Spotify Credentials
