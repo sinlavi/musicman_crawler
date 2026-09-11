@@ -296,7 +296,7 @@ class DownloadService:
 
         fields = {
             "🎵 Title": track_name_link,
-            "🎤 Uploader" if is_sc else "🎤 Artist: ": artist_link,
+            "🎤 Uploader" if is_sc else "🎤 Artist": artist_link,
             "💿 Album": coll_link if not is_sc else None,
             "📅 Release": str(track.get('releaseDate', ''))[:4] if track.get('releaseDate') else None,
             "🎸 Genre": track.get('primaryGenreName'),
