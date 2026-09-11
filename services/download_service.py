@@ -274,20 +274,20 @@ class DownloadService:
             artist_link = artist_name
         else:
             if artist_name:
-                artist_link = f"[{artist_name}]({generate_deep_link('artist', artist_id)})" if artist_id else artist_name
+                artist_link = f"{artist_name}" if artist_id else artist_name
             else:
                 artist_link = None
 
         coll_id = track.get('collectionId')
         coll_name = track.get('collectionName')
         if coll_name:
-            coll_link = f"[{coll_name}]({generate_deep_link('collection', coll_id)})" if coll_id else coll_name
+            coll_link = f"{coll_name}" if coll_id else coll_name
         else:
             coll_link = None
 
         track_name = track.get('trackName')
         if track_name:
-            track_name_link = f"[{track_name}]({generate_deep_link('track', track_id)})"
+            track_name_link = f"{track_name}"
         else:
             track_name_link = None
 
