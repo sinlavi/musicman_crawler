@@ -15,7 +15,7 @@ PROXY = os.getenv("proxy", "socks5h://127.0.0.1:1080")
 TG_TOKEN = os.getenv("TG_TOKEN")
 
 # Target Chat ID for sending messages
-TARGET_CHAT_ID = -4499922541
+TARGET_CHAT_ID = -1004499922541
 
 # Database and Channel IDs
 DB_CHANNEL_ID = os.getenv("DB_CHANNEL_ID")
