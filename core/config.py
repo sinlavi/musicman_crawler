@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Bot Info
-BOT_NAME = "ابرآوا"
-BOT_USERNAME = "@abraava_bot"
-INFO_CHANNEL_USERNAME = "@abraava"
+BOT_NAME = "MusicMan"
+BOT_USERNAME = "@musicman_bot"
+INFO_CHANNEL_USERNAME = "@musicman_official"
 FOOTER = f'\n\n{INFO_CHANNEL_USERNAME}\n{BOT_USERNAME}'
 DEEP_LINK_BASE = f"https://ble.ir/{BOT_USERNAME.lstrip('@')}?start="
 
