@@ -108,10 +108,23 @@ async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = 
 
     if status == 200 and data:
         if isinstance(data, bytes):
-            data = json.loads(data.decode())
+            text = data.decode("utf-8", errors="replace")
+        
+            logger.error(f"3rah RAW RESPONSE ({status}): {repr(text[:500])}")
+        
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                logger.error("3rah returned invalid JSON")
+                return {
+                    "success": False,
+                    "error": "Invalid JSON response",
+                    "raw": text[:500]
+                }
         if can_cache:
             await _itunes_cache.set(endpoint, params, data)
         return data
+        
 
     if is_tech_err:
         logger.error(f"3rah fetch failed with technical error: {status} for {url}")
