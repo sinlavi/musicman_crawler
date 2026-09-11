@@ -200,7 +200,7 @@ class DirectDownloadService:
                 with open(mp3_path, 'rb') as f:
                     await self.bot.send_chat_action(chat_id, "upload_voice")
                     logger.info(f"Direct uploading audio: {track_data.get('trackName')} ({quality}kbps)")
-                    await self.bot.send_audio(chat_id, audio=f, caption=f"{caption}{FOOTER}")
+                    await self.bot.send_audio(chat_id, audio=f)
 
                 # DUAL UPLOAD for direct downloads
                 if str(quality) == "320":
@@ -220,7 +220,7 @@ class DirectDownloadService:
                             with open(mp3_192_path, 'rb') as f192:
                                 await self.bot.send_chat_action(chat_id, "upload_voice")
                                 logger.info(f"Direct uploading converted 192kbps audio: {track_data.get('trackName')}")
-                                await self.bot.send_audio(chat_id, audio=f192, caption=f"{caption_192}{FOOTER}")
+                                await self.bot.send_audio(chat_id, audio=f192)
                     except Exception as e:
                         logger.error(f"Failed dual upload in direct download: {e}")
                 await safe_delete(status_msg)
