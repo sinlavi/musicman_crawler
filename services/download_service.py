@@ -295,13 +295,13 @@ class DownloadService:
         duration_text = format_duration(duration_ms) if duration_ms > 0 else None
 
         fields = {
-            "🎵 نام آهنگ": track_name_link,
-            "🎤 نام آپلودر" if is_sc else "🎤 نام هنرمند": artist_link,
-            "💿 نام آلبوم": coll_link if not is_sc else None,
-            "📅 سال انتشار": str(track.get('releaseDate', ''))[:4] if track.get('releaseDate') else None,
-            "🎸 سبک": track.get('primaryGenreName'),
-            "⏱️ مدت زمان": duration_text if not is_sc else None,
-            "📀 کیفیت دانلود": f"{quality_value} kbps"
+            "🎵 Title: ": track_name_link,
+            "🎤 Uploader: " if is_sc else "🎤 Artist: ": artist_link,
+            "💿 Album: ": coll_link if not is_sc else None,
+            "📅 Release: ": str(track.get('releaseDate', ''))[:4] if track.get('releaseDate') else None,
+            "🎸 Genre: ": track.get('primaryGenreName'),
+            "⏱️ Duration: ": duration_text if not is_sc else None,
+            "📀 Quality: ": f"{quality_value} kbps"
         }
 
         caption_lines = []
