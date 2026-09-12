@@ -81,6 +81,9 @@ class DownloadService:
         if quality_value == "ask": quality_value = "192"
 
         duration_ms = int(track.get('trackTimeMillis') or 0)
+        duration_sec = duration_ms // 1000 if duration_ms > 0 else None
+        title = track.get('trackName')
+        performer = track.get('artistName')
         caption = self._build_caption(track, quality_value)
 
         # Check cache
@@ -94,7 +97,14 @@ class DownloadService:
                     await self.bot.send_chat_action(chat_id, "upload_voice")
                 logger.info(f"Sending cached audio: {track.get('trackName')} ({quality_value}kbps)")
 
-                await self.bot.send_audio(chat_id, audio=audio_cache, caption=caption)
+                await self.bot.send_audio(
+                    chat_id,
+                    audio=audio_cache,
+                    caption=caption,
+                    title=title,
+                    performer=performer,
+                    duration=duration_sec
+                )
                 if not is_batch: await safe_delete(status_msg)
                 await self.api_client.log_download(user_id, str(track_id), track.get('trackName', ''),
                                                    track.get('artistName', ''), track.get('collectionName', ''),
@@ -197,7 +207,15 @@ class DownloadService:
                     logger.info(f"Uploading fresh audio: {track.get('trackName')} ({quality_value}kbps)")
 
                     try:
-                        msg = await self.bot.send_audio(chat_id, audio=f, caption=caption)
+                        msg = await self.bot.send_audio(
+                            chat_id,
+                            audio=f,
+                            caption=caption,
+                            title=title,
+                            performer=performer,
+                            duration=duration_sec,
+                            thumbnail=cover_bytes
+                        )
                     except telegram.error.BadRequest as e:
                         if ("File is too large" in str(e) or "file_too_large" in str(e).lower()) and str(quality_value) == "320":
                             logger.warning(f"File too large for 320kbps, retrying with 192kbps: {track.get('trackName')}")
@@ -208,7 +226,15 @@ class DownloadService:
                             if convert_bitrate(Path(mp3_path), Path(mp3_192_retry_path), "192"):
                                 self.tagging_service.tag_mp3(Path(mp3_192_retry_path), track, cover_bytes, lyrics=lyrics_to_tag)
                                 with open(mp3_192_retry_path, 'rb') as f_retry:
-                                    msg = await self.bot.send_audio(chat_id, audio=f_retry, caption=self._build_caption(track, "192"))
+                                    msg = await self.bot.send_audio(
+                                        chat_id,
+                                        audio=f_retry,
+                                        caption=self._build_caption(track, "192"),
+                                        title=title,
+                                        performer=performer,
+                                        duration=duration_sec,
+                                        thumbnail=cover_bytes
+                                    )
                                     quality_value = "192" # Update quality for logging and mirroring
                             else:
                                 raise e
@@ -238,7 +264,15 @@ class DownloadService:
                                     await self.bot.send_chat_action(chat_id, "upload_voice")
                                 logger.info(f"Uploading converted 192kbps audio: {track.get('trackName')}")
 
-                                msg192 = await self.bot.send_audio(chat_id, audio=f192, caption=caption_192)
+                                msg192 = await self.bot.send_audio(
+                                    chat_id,
+                                    audio=f192,
+                                    caption=caption_192,
+                                    title=title,
+                                    performer=performer,
+                                    duration=duration_sec,
+                                    thumbnail=cover_bytes
+                                )
                                 if msg192 and track_id:
                                     await set_mirror('track', str(track_id), 'audioUrl',
                                                      f'https://api.telegram.org/file/bot<token>/{msg192.audio.file_id}',

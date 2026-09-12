@@ -127,7 +127,8 @@ class DirectDownloadService:
                             'artistName': info.get('uploader', info.get('artist', 'Unknown')),
                             'collectionName': info.get('album', ''),
                             'releaseDate': info.get('upload_date', '')[:4],
-                            'thumbnail': info.get('thumbnail')
+                            'thumbnail': info.get('thumbnail'),
+                            'duration': info.get('duration')
                         }
 
                         files = list(Path(temp_dir).glob("*.mp3"))
@@ -196,11 +197,20 @@ class DirectDownloadService:
                         caption_lines.append(f"{k}: {v}")
 
                 caption = "\n".join(caption_lines)
+                duration_sec = int(track_data['duration']) if track_data.get('duration') else None
 
                 with open(mp3_path, 'rb') as f:
                     await self.bot.send_chat_action(chat_id, "upload_voice")
                     logger.info(f"Direct uploading audio: {track_data.get('trackName')} ({quality}kbps)")
-                    await self.bot.send_audio(chat_id, audio=f)
+                    await self.bot.send_audio(
+                        chat_id,
+                        audio=f,
+                        caption=caption,
+                        title=track_name,
+                        performer=track_data.get('artistName'),
+                        duration=duration_sec,
+                        thumbnail=cover_bytes
+                    )
 
                 # DUAL UPLOAD for direct downloads
                 if str(quality) == "320":
@@ -220,7 +230,15 @@ class DirectDownloadService:
                             with open(mp3_192_path, 'rb') as f192:
                                 await self.bot.send_chat_action(chat_id, "upload_voice")
                                 logger.info(f"Direct uploading converted 192kbps audio: {track_data.get('trackName')}")
-                                await self.bot.send_audio(chat_id, audio=f192)
+                                await self.bot.send_audio(
+                                    chat_id,
+                                    audio=f192,
+                                    caption=caption_192,
+                                    title=track_name,
+                                    performer=track_data.get('artistName'),
+                                    duration=duration_sec,
+                                    thumbnail=cover_bytes
+                                )
                     except Exception as e:
                         logger.error(f"Failed dual upload in direct download: {e}")
                 await safe_delete(status_msg)
