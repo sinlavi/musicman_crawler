@@ -275,9 +275,11 @@ class DownloadService:
                             raise e
 
                     if msg and track_id:
-                        await set_mirror('track', str(track_id), 'audioUrl',
-                                         f'https://api.telegram.org/file/bot<token>/{msg.audio.file_id}',
-                                         quality=quality_value)
+                        mirror_res = await set_mirror('track', str(track_id), 'audioUrl',
+                                                     f'https://api.telegram.org/file/bot<token>/{msg.audio.file_id}',
+                                                     quality=quality_value)
+                        if not mirror_res or not mirror_res.get("success"):
+                            logger.error(f"Failed to set mirror for track {track_id} quality {quality_value} after retries")
 
                 # DUAL UPLOAD: Only send 192kbps in addition for audios longer than 8 minutes (480s)
                 other_quality = "192" if str(quality_value) == "320" else "320"
@@ -323,9 +325,11 @@ class DownloadService:
                                         thumbnail=cover_bytes
                                     )
                                 if msg_conv and track_id:
-                                    await set_mirror('track', str(track_id), 'audioUrl',
-                                                     f'https://api.telegram.org/file/bot<token>/{msg_conv.audio.file_id}',
-                                                     quality=other_quality)
+                                    mirror_conv_res = await set_mirror('track', str(track_id), 'audioUrl',
+                                                                       f'https://api.telegram.org/file/bot<token>/{msg_conv.audio.file_id}',
+                                                                       quality=other_quality)
+                                    if not mirror_conv_res or not mirror_conv_res.get("success"):
+                                        logger.error(f"Failed to set mirror for converted track {track_id} quality {other_quality} after retries")
                     except Exception as e:
                         logger.error(f"Failed to perform dual quality upload for {other_quality}kbps: {e}")
 
