@@ -5,6 +5,7 @@ import shutil
 import uuid
 import yt_dlp
 import random
+import telegram
 from pathlib import Path
 from core.logger import logger
 from utils.messages import send_message, edit_message, safe_delete
@@ -202,15 +203,29 @@ class DirectDownloadService:
                 with open(mp3_path, 'rb') as f:
                     await self.bot.send_chat_action(chat_id, "upload_voice")
                     logger.info(f"Direct uploading audio: {track_data.get('trackName')} ({quality}kbps)")
-                    await self.bot.send_audio(
-                        chat_id,
-                        audio=f,
-                        caption=caption,
-                        title=track_name,
-                        performer=track_data.get('artistName'),
-                        duration=duration_sec,
-                        thumbnail=cover_bytes
-                    )
+                    try:
+                        await self.bot.send_audio(
+                            chat_id,
+                            audio=f,
+                            caption=caption,
+                            title=track_name,
+                            performer=track_data.get('artistName'),
+                            duration=duration_sec,
+                            thumbnail=cover_bytes
+                        )
+                    except telegram.error.RetryAfter as e:
+                        logger.warning(f"Telegram flood control hit in direct download. Waiting {e.retry_after} seconds before retry.")
+                        await asyncio.sleep(e.retry_after)
+                        f.seek(0)
+                        await self.bot.send_audio(
+                            chat_id,
+                            audio=f,
+                            caption=caption,
+                            title=track_name,
+                            performer=track_data.get('artistName'),
+                            duration=duration_sec,
+                            thumbnail=cover_bytes
+                        )
 
                 # DUAL UPLOAD for direct downloads: Only send 192kbps in addition for audios longer than 8 minutes (480s)
                 other_quality = "192" if str(quality) == "320" else "320"
@@ -232,15 +247,29 @@ class DirectDownloadService:
                             with open(mp3_conv_path, 'rb') as f_conv:
                                 await self.bot.send_chat_action(chat_id, "upload_voice")
                                 logger.info(f"Direct uploading converted {other_quality}kbps audio: {track_data.get('trackName')}")
-                                await self.bot.send_audio(
-                                    chat_id,
-                                    audio=f_conv,
-                                    caption=caption_conv,
-                                    title=track_name,
-                                    performer=track_data.get('artistName'),
-                                    duration=duration_sec,
-                                    thumbnail=cover_bytes
-                                )
+                                try:
+                                    await self.bot.send_audio(
+                                        chat_id,
+                                        audio=f_conv,
+                                        caption=caption_conv,
+                                        title=track_name,
+                                        performer=track_data.get('artistName'),
+                                        duration=duration_sec,
+                                        thumbnail=cover_bytes
+                                    )
+                                except telegram.error.RetryAfter as e:
+                                    logger.warning(f"Telegram flood control hit in dual quality direct upload. Waiting {e.retry_after} seconds before retry.")
+                                    await asyncio.sleep(e.retry_after)
+                                    f_conv.seek(0)
+                                    await self.bot.send_audio(
+                                        chat_id,
+                                        audio=f_conv,
+                                        caption=caption_conv,
+                                        title=track_name,
+                                        performer=track_data.get('artistName'),
+                                        duration=duration_sec,
+                                        thumbnail=cover_bytes
+                                    )
                     except Exception as e:
                         logger.error(f"Failed dual upload in direct download: {e}")
                 await safe_delete(status_msg)
