@@ -67,6 +67,7 @@ class DownloadService:
             return status_msg, False
 
         track = track_data["results"][0]
+        track_id = track_id or track.get("trackId") or track.get("id")
 
         if not is_batch:
             track_name = track.get("trackName", "Unknown")
