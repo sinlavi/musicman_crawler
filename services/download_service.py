@@ -208,15 +208,29 @@ class DownloadService:
                     logger.info(f"Uploading fresh audio: {track.get('trackName')} ({quality_value}kbps)")
 
                     try:
-                        msg = await self.bot.send_audio(
-                            chat_id,
-                            audio=f,
-                            caption=caption,
-                            title=title,
-                            performer=performer,
-                            duration=duration_sec,
-                            thumbnail=cover_bytes
-                        )
+                        try:
+                            msg = await self.bot.send_audio(
+                                chat_id,
+                                audio=f,
+                                caption=caption,
+                                title=title,
+                                performer=performer,
+                                duration=duration_sec,
+                                thumbnail=cover_bytes
+                            )
+                        except telegram.error.RetryAfter as e:
+                            logger.warning(f"Telegram flood control hit. Waiting {e.retry_after} seconds before retry.")
+                            await asyncio.sleep(e.retry_after)
+                            f.seek(0)
+                            msg = await self.bot.send_audio(
+                                chat_id,
+                                audio=f,
+                                caption=caption,
+                                title=title,
+                                performer=performer,
+                                duration=duration_sec,
+                                thumbnail=cover_bytes
+                            )
                     except telegram.error.BadRequest as e:
                         if ("File is too large" in str(e) or "file_too_large" in str(e).lower()) and str(quality_value) == "320":
                             logger.warning(f"File too large for 320kbps, retrying with 192kbps: {track.get('trackName')}")
@@ -265,15 +279,29 @@ class DownloadService:
                                 await self.bot.send_chat_action(chat_id, "upload_voice")
                             logger.info(f"Uploading converted {other_quality}kbps audio: {track.get('trackName')}")
 
-                            msg_conv = await self.bot.send_audio(
-                                chat_id,
-                                audio=f_conv,
-                                caption=caption_conv,
-                                title=title,
-                                performer=performer,
-                                duration=duration_sec,
-                                thumbnail=cover_bytes
-                            )
+                            try:
+                                msg_conv = await self.bot.send_audio(
+                                    chat_id,
+                                    audio=f_conv,
+                                    caption=caption_conv,
+                                    title=title,
+                                    performer=performer,
+                                    duration=duration_sec,
+                                    thumbnail=cover_bytes
+                                )
+                            except telegram.error.RetryAfter as e:
+                                logger.warning(f"Telegram flood control hit on dual quality upload. Waiting {e.retry_after} seconds before retry.")
+                                await asyncio.sleep(e.retry_after)
+                                f_conv.seek(0)
+                                msg_conv = await self.bot.send_audio(
+                                    chat_id,
+                                    audio=f_conv,
+                                    caption=caption_conv,
+                                    title=title,
+                                    performer=performer,
+                                    duration=duration_sec,
+                                    thumbnail=cover_bytes
+                                )
                             if msg_conv and track_id:
                                 await set_mirror('track', str(track_id), 'audioUrl',
                                                  f'https://api.telegram.org/file/bot<token>/{msg_conv.audio.file_id}',
