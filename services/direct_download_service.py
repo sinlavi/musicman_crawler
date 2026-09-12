@@ -215,7 +215,7 @@ class DirectDownloadService:
                 # DUAL UPLOAD for direct downloads: Only send 192kbps in addition for audios longer than 8 minutes (480s)
                 other_quality = "192" if str(quality) == "320" else "320"
                 is_longer_than_8_min = duration_sec is not None and duration_sec > 480
-                if other_quality != "192" or is_longer_than_8_min:
+                if other_quality == "192" and is_longer_than_8_min:
                     try:
                         mp3_conv_path = str(mp3_path).replace(".mp3", f"_{other_quality}.mp3")
                         if convert_bitrate(Path(mp3_path), Path(mp3_conv_path), other_quality):
