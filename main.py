@@ -43,8 +43,8 @@ TARGET_CHANNEL_ID = TARGET_CHAT_ID
 artwork_lock = asyncio.Lock()
 
 async def process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event=None):
-    download_id = item.get("download_id")
-    track_id = item.get("trackId")
+    download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
+    track_id = item.get("trackId") or item.get("track_id") or item.get("id")
     quality = str(item.get("quality") or DEFAULT_QUALITY)
 
     logger.info(f"Processing download {download_id} for track {track_id} (quality: {quality})")
@@ -65,11 +65,13 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
                 track = track_data["results"][0]
                 await update_download_status(download_id, "downloading", percent=5)
 
+                effective_track_id = track_id or track.get("trackId") or track.get("id")
+
                 # 2 & 3. Process Artwork & Voice Preview concurrently
                 async def _upload_artwork_task():
                     artwork_url = get_high_res_artwork(track.get("artworkUrl100"), 400)
                     if artwork_url:
-                        coll_id = track.get("collectionId") or track_id
+                        coll_id = track.get("collectionId") or effective_track_id
                         # Use lock to prevent duplicate concurrent uploads for the same collection
                         async with artwork_lock:
                             if not await artwork_service.get_cached_artwork_url("collection", coll_id):
@@ -80,12 +82,14 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
                                     if photo_msg and photo_msg.photo:
                                         file_id = photo_msg.photo[-1].file_id
                                         mirror_url = f"https://api.telegram.org/file/bot<token>/{file_id}"
-                                        await set_mirror("collection", str(coll_id), "artworkUrl", mirror_url)
-                                        await set_mirror("track", str(track_id), "artworkUrl", mirror_url)
+                                        if coll_id:
+                                            await set_mirror("collection", str(coll_id), "artworkUrl", mirror_url)
+                                        if effective_track_id:
+                                            await set_mirror("track", str(effective_track_id), "artworkUrl", mirror_url)
 
                 async def _upload_preview_task():
-                    if track.get("previewUrl"):
-                        await send_voice_preview(bot, TARGET_CHANNEL_ID, track_id, user_id, silent=True)
+                    if track.get("previewUrl") and effective_track_id:
+                        await send_voice_preview(bot, TARGET_CHANNEL_ID, effective_track_id, user_id, silent=True)
 
                 # Parallelize I/O bound tasks (artwork processing/mirroring and voice preview upload)
                 await asyncio.gather(_upload_artwork_task(), _upload_preview_task())
@@ -214,7 +218,9 @@ async def run_crawler():
                     if len(active_tasks) >= MAX_CONCURRENT_TASKS:
                         break
 
-                    download_id = item.get("download_id")
+                    download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
+                    if download_id is None:
+                        continue
 
                     # Sharding logic: only process items that belong to this instance
                     if download_id % TOTAL_INSTANCES != (INSTANCE_ID - 1):
