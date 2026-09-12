@@ -77,9 +77,9 @@ class DownloadService:
             if album_name:
                 status_prefix += f"\n💿 *آلبوم:* {album_name}"
 
-        # Default target download quality is 320 to support dual quality rendering (320 + 192)
+        # Default target download quality is 320, unless specified (e.g. 192)
         quality_value = selected_quality or "320"
-        if quality_value in ("ask", "192"): quality_value = "320"
+        if quality_value == "ask": quality_value = "320"
 
         duration_ms = int(track.get('trackTimeMillis') or 0)
         duration_sec = duration_ms // 1000 if duration_ms > 0 else None
