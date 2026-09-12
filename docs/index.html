@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MusicMan - Distributed Music Crawler & Bot Service</title>
+  <meta name="description" content="High-performance distributed music crawler, metadata tagging engine, and Telegram bot service.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0b0f19;
+      --bg-secondary: #111827;
+      --bg-card: rgba(17, 24, 39, 0.7);
+      --border-card: rgba(255, 255, 255, 0.08);
+      --accent-primary: #6366f1;
+      --accent-secondary: #a855f7;
+      --accent-glow: rgba(99, 102, 241, 0.25);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-highlight: #38bdf8;
+      --card-hover-border: rgba(99, 102, 241, 0.4);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+      background-image:
+        radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 65%, rgba(168, 85, 247, 0.12) 0%, transparent 40%);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header Navigation */
+    header {
+      padding: 24px 0;
+      border-bottom: 1px solid var(--border-card);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(11, 15, 25, 0.8);
+    }
+
+    .nav-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      box-shadow: 0 4px 14px var(--accent-glow);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-main);
+    }
+
+    .btn-main {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 10px 22px;
+      border-radius: 10px;
+      text-decoration: none;
+      box-shadow: 0 4px 16px var(--accent-glow);
+      transition: all 0.25s ease;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-main:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 100px 0 60px;
+      text-align: center;
+      position: relative;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #818cf8;
+      padding: 6px 16px;
+      border-radius: 30px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: #34d399;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #34d399;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.6; transform: scale(0.95); }
+      50% { opacity: 1; transform: scale(1.1); }
+      100% { opacity: 0.6; transform: scale(0.95); }
+    }
+
+    .hero-title {
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 20px;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-title span {
+      background: linear-gradient(135deg, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 760px;
+      margin: 0 auto 36px;
+      font-weight: 400;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-secondary);
+      color: var(--text-main);
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 10px 22px;
+      border-radius: 10px;
+      text-decoration: none;
+      border: 1px solid var(--border-card);
+      transition: all 0.25s ease;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Features Grid */
+    .features {
+      padding: 80px 0;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+
+    .section-title {
+      font-size: 2.25rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+
+    .section-desc {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 16px;
+      padding: 32px;
+      backdrop-filter: blur(12px);
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: var(--card-hover-border);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      background: rgba(99, 102, 241, 0.12);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+      color: #818cf8;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .card-text {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* Architecture / Flow Section */
+    .architecture {
+      padding: 60px 0 80px;
+    }
+
+    .arch-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-card);
+      border-radius: 16px;
+      padding: 32px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-highlight);
+      font-size: 0.9rem;
+      overflow-x: auto;
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Live Link Banner */
+    .banner {
+      margin: 60px 0;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 20px;
+      padding: 48px 32px;
+      text-align: center;
+      position: relative;
+    }
+
+    .banner-title {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .banner-text {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto 28px;
+    }
+
+    /* Footer */
+    footer {
+      padding: 40px 0;
+      border-top: 1px solid var(--border-card);
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    footer a {
+      color: #818cf8;
+      text-decoration: none;
+    }
+
+    @media (max-width: 768px) {
+      .hero-title {
+        font-size: 2.5rem;
+      }
+      .nav-links {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="container nav-container">
+      <a href="#" class="logo">
+        <div class="logo-icon">🎵</div>
+        <span>MusicMan</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="https://github.com/3rah/musicman" target="_blank">GitHub</a></li>
+      </ul>
+      <a href="https://mm.3rah.ir" target="_blank" class="btn-main">
+        🚀 Open Main Instance
+      </a>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="badge-pill">
+        <span class="pulse-dot"></span> Active Main Instance: mm.3rah.ir
+      </div>
+      <h1 class="hero-title">High-Performance <span>Distributed Music</span> Processing Engine</h1>
+      <p class="hero-subtitle">
+        Automated queue polling, iTunes & YouTube Music audio extraction, HD artwork embedding, ID3 tagging, voice previews, and instant Telegram channel delivery.
+      </p>
+      <div class="hero-actions">
+        <a href="https://mm.3rah.ir" target="_blank" class="btn-main">
+          🌐 Access Project Instance (mm.3rah.ir)
+        </a>
+        <a href="https://github.com/3rah/musicman" target="_blank" class="btn-secondary">
+          ⭐ View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Engineered for Scale & Precision</h2>
+        <p class="section-desc">Everything needed to process, enrich, and deliver digital music at scale.</p>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="card-icon">⚡</div>
+          <h3 class="card-title">Distributed Modulo Sharding</h3>
+          <p class="card-text">
+            Scales across unlimited parallel instances using deterministic <code>download_id % TOTAL_INSTANCES</code> sharding. Eliminates task collisions without external broker overhead.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🎨</div>
+          <h3 class="card-title">HD Artwork & ID3 Enrichment</h3>
+          <p class="card-text">
+            Injects high-resolution cover art (up to 3000x3000px), title, artist, album, release year, genre, and lyrics directly into standard ID3 audio tags.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🎙️</div>
+          <h3 class="card-title">Voice Preview Generation</h3>
+          <p class="card-text">
+            Extracts high-quality 30-second audio snippets tailored for Telegram voice previews, enabling instant audio listening before full download.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🔄</div>
+          <h3 class="card-title">Self-Healing Queue Recovery</h3>
+          <p class="card-text">
+            Primary instances detect crashed or interrupted tasks and reset stuck downloads back to pending status with exponential backoff on technical errors.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🌐</div>
+          <h3 class="card-title">Cloudflare WARP Integration</h3>
+          <p class="card-text">
+            Built-in support for Cloudflare WARP SOCKS5 proxy routing to bypass geo-restrictions and platform rate limiting seamlessly.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">📜</div>
+          <h3 class="card-title">Synced Lyrics Fetching</h3>
+          <p class="card-text">
+            Queries LRCLIB and lyrics services for synchronized (.lrc) and plain text lyrics, embedding them directly into track files.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section class="architecture" id="architecture">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">System Architecture Flow</h2>
+        <p class="section-desc">Distributed workflow from queue polling to Telegram channel broadcast.</p>
+      </div>
+      <div class="arch-box">
+┌─────────────────────────────────────────────────────────────┐
+│              Main Web Instance (https://mm.3rah.ir)         │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ Poll Queue (/get_download_queue)
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Distributed Crawler Pool                  │
+│  Instance 1 (id % 3 == 0) | Instance 2 (id % 3 == 1) | ...  │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+            ┌──────────────────┼──────────────────┐
+            ▼                  ▼                  ▼
+     ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+     │ iTunes / YT  │   │ Tagging & HD │   │ Telegram Bot │
+     │ Downloader   │   │ Artwork      │   │ Delivery     │
+     └──────────────┘   └──────────────┘   └──────────────┘
+      </div>
+    </div>
+  </section>
+
+  <!-- Banner Call to Action -->
+  <section class="container">
+    <div class="banner">
+      <h2 class="banner-title">Ready to Experience MusicMan?</h2>
+      <p class="banner-text">Visit our main live web platform to start processing and downloading music queues instantly.</p>
+      <a href="https://mm.3rah.ir" target="_blank" class="btn-main">
+        🚀 Visit Main Instance: mm.3rah.ir
+      </a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p>MusicMan Distributed Crawler & Bot Service &bull; Main Web Instance: <a href="https://mm.3rah.ir" target="_blank">mm.3rah.ir</a></p>
+    </div>
+  </footer>
+
+</body>
+</html>
