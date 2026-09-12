@@ -100,7 +100,7 @@ class DirectDownloadService:
         await safe_delete(msg)
         return await send_message(self.bot, chat_id, text)
 
-    async def download_direct(self, chat_id, url, user_id, quality="192"):
+    async def download_direct(self, chat_id, url, user_id, quality="320"):
         status_msg = await send_message(self.bot, chat_id, f"⏳ *در حال شروع دانلود...*")
 
         unique_id = uuid.uuid4().hex
@@ -212,35 +212,35 @@ class DirectDownloadService:
                         thumbnail=cover_bytes
                     )
 
-                # DUAL UPLOAD for direct downloads
-                if str(quality) == "320":
-                    try:
-                        mp3_192_path = str(mp3_path).replace(".mp3", "_192.mp3")
-                        if convert_bitrate(Path(mp3_path), Path(mp3_192_path), "192"):
-                            self.tagging_service.tag_mp3(mp3_192_path, track_data, cover_bytes=cover_bytes, lyrics=lyrics_to_tag)
+                # DUAL UPLOAD for direct downloads: Always ensure both 320kbps and 192kbps are created & sent
+                other_quality = "192" if str(quality) == "320" else "320"
+                try:
+                    mp3_conv_path = str(mp3_path).replace(".mp3", f"_{other_quality}.mp3")
+                    if convert_bitrate(Path(mp3_path), Path(mp3_conv_path), other_quality):
+                        self.tagging_service.tag_mp3(mp3_conv_path, track_data, cover_bytes=cover_bytes, lyrics=lyrics_to_tag)
 
-                            fields_192 = {
-                                "🎵 نام آهنگ": track_name,
-                                "🎤 نام هنرمند": track_data.get('artistName'),
-                                "💿 نام آلبوم": track_data.get('collectionName'),
-                                "📀 کیفیت دانلود": "192 kbps"
-                            }
-                            caption_192 = "\n".join([f"{k}: {v}" for k, v in fields_192.items() if v and "Unknown" not in str(v)])
+                        fields_conv = {
+                            "🎵 نام آهنگ": track_name,
+                            "🎤 نام هنرمند": track_data.get('artistName'),
+                            "💿 نام آلبوم": track_data.get('collectionName'),
+                            "📀 کیفیت دانلود": f"{other_quality} kbps"
+                        }
+                        caption_conv = "\n".join([f"{k}: {v}" for k, v in fields_conv.items() if v and "Unknown" not in str(v)])
 
-                            with open(mp3_192_path, 'rb') as f192:
-                                await self.bot.send_chat_action(chat_id, "upload_voice")
-                                logger.info(f"Direct uploading converted 192kbps audio: {track_data.get('trackName')}")
-                                await self.bot.send_audio(
-                                    chat_id,
-                                    audio=f192,
-                                    caption=caption_192,
-                                    title=track_name,
-                                    performer=track_data.get('artistName'),
-                                    duration=duration_sec,
-                                    thumbnail=cover_bytes
-                                )
-                    except Exception as e:
-                        logger.error(f"Failed dual upload in direct download: {e}")
+                        with open(mp3_conv_path, 'rb') as f_conv:
+                            await self.bot.send_chat_action(chat_id, "upload_voice")
+                            logger.info(f"Direct uploading converted {other_quality}kbps audio: {track_data.get('trackName')}")
+                            await self.bot.send_audio(
+                                chat_id,
+                                audio=f_conv,
+                                caption=caption_conv,
+                                title=track_name,
+                                performer=track_data.get('artistName'),
+                                duration=duration_sec,
+                                thumbnail=cover_bytes
+                            )
+                except Exception as e:
+                    logger.error(f"Failed dual upload in direct download: {e}")
                 await safe_delete(status_msg)
                 return status_msg, True
             else:

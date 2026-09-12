@@ -77,8 +77,9 @@ class DownloadService:
             if album_name:
                 status_prefix += f"\n💿 *آلبوم:* {album_name}"
 
-        quality_value = selected_quality or DEFAULT_QUALITY
-        if quality_value == "ask": quality_value = "192"
+        # Default target download quality is 320 to support dual quality rendering (320 + 192)
+        quality_value = selected_quality or "320"
+        if quality_value in ("ask", "192"): quality_value = "320"
 
         duration_ms = int(track.get('trackTimeMillis') or 0)
         duration_sec = duration_ms // 1000 if duration_ms > 0 else None
@@ -207,15 +208,29 @@ class DownloadService:
                     logger.info(f"Uploading fresh audio: {track.get('trackName')} ({quality_value}kbps)")
 
                     try:
-                        msg = await self.bot.send_audio(
-                            chat_id,
-                            audio=f,
-                            caption=caption,
-                            title=title,
-                            performer=performer,
-                            duration=duration_sec,
-                            thumbnail=cover_bytes
-                        )
+                        try:
+                            msg = await self.bot.send_audio(
+                                chat_id,
+                                audio=f,
+                                caption=caption,
+                                title=title,
+                                performer=performer,
+                                duration=duration_sec,
+                                thumbnail=cover_bytes
+                            )
+                        except telegram.error.RetryAfter as e:
+                            logger.warning(f"Telegram flood control hit. Waiting {e.retry_after} seconds before retry.")
+                            await asyncio.sleep(e.retry_after)
+                            f.seek(0)
+                            msg = await self.bot.send_audio(
+                                chat_id,
+                                audio=f,
+                                caption=caption,
+                                title=title,
+                                performer=performer,
+                                duration=duration_sec,
+                                thumbnail=cover_bytes
+                            )
                     except telegram.error.BadRequest as e:
                         if ("File is too large" in str(e) or "file_too_large" in str(e).lower()) and str(quality_value) == "320":
                             logger.warning(f"File too large for 320kbps, retrying with 192kbps: {track.get('trackName')}")
@@ -246,39 +261,53 @@ class DownloadService:
                                          f'https://api.telegram.org/file/bot<token>/{msg.audio.file_id}',
                                          quality=quality_value)
 
-                # DUAL UPLOAD: If 320 was downloaded, also convert and upload 192
-                if str(quality_value) == "320":
-                    try:
-                        status_msg = await self._update_status(chat_id, status_msg, "🔄 *در حال تبدیل به کیفیت 192kbps...*",
-                                                               status_prefix, is_batch, silent=silent)
+                # DUAL UPLOAD: Always ensure both 320kbps and 192kbps formats are created and uploaded
+                other_quality = "192" if str(quality_value) == "320" else "320"
+                try:
+                    status_msg = await self._update_status(chat_id, status_msg, f"🔄 *در حال تبدیل به کیفیت {other_quality}kbps...*",
+                                                           status_prefix, is_batch, silent=silent)
 
-                        mp3_192_path = mp3_path.replace(".mp3", "_192.mp3")
-                        if convert_bitrate(Path(mp3_path), Path(mp3_192_path), "192"):
-                            # Re-tag the converted file
-                            self.tagging_service.tag_mp3(Path(mp3_192_path), track, cover_bytes, lyrics=lyrics_to_tag)
+                    mp3_conv_path = mp3_path.replace(".mp3", f"_{other_quality}.mp3")
+                    if convert_bitrate(Path(mp3_path), Path(mp3_conv_path), other_quality):
+                        # Re-tag converted file
+                        self.tagging_service.tag_mp3(Path(mp3_conv_path), track, cover_bytes, lyrics=lyrics_to_tag)
 
-                            caption_192 = self._build_caption(track, "192")
+                        caption_conv = self._build_caption(track, other_quality)
 
-                            with open(mp3_192_path, 'rb') as f192:
-                                if not silent:
-                                    await self.bot.send_chat_action(chat_id, "upload_voice")
-                                logger.info(f"Uploading converted 192kbps audio: {track.get('trackName')}")
+                        with open(mp3_conv_path, 'rb') as f_conv:
+                            if not silent:
+                                await self.bot.send_chat_action(chat_id, "upload_voice")
+                            logger.info(f"Uploading converted {other_quality}kbps audio: {track.get('trackName')}")
 
-                                msg192 = await self.bot.send_audio(
+                            try:
+                                msg_conv = await self.bot.send_audio(
                                     chat_id,
-                                    audio=f192,
-                                    caption=caption_192,
+                                    audio=f_conv,
+                                    caption=caption_conv,
                                     title=title,
                                     performer=performer,
                                     duration=duration_sec,
                                     thumbnail=cover_bytes
                                 )
-                                if msg192 and track_id:
-                                    await set_mirror('track', str(track_id), 'audioUrl',
-                                                     f'https://api.telegram.org/file/bot<token>/{msg192.audio.file_id}',
-                                                     quality="192")
-                    except Exception as e:
-                        logger.error(f"Failed to perform dual quality upload: {e}")
+                            except telegram.error.RetryAfter as e:
+                                logger.warning(f"Telegram flood control hit on dual quality upload. Waiting {e.retry_after} seconds before retry.")
+                                await asyncio.sleep(e.retry_after)
+                                f_conv.seek(0)
+                                msg_conv = await self.bot.send_audio(
+                                    chat_id,
+                                    audio=f_conv,
+                                    caption=caption_conv,
+                                    title=title,
+                                    performer=performer,
+                                    duration=duration_sec,
+                                    thumbnail=cover_bytes
+                                )
+                            if msg_conv and track_id:
+                                await set_mirror('track', str(track_id), 'audioUrl',
+                                                 f'https://api.telegram.org/file/bot<token>/{msg_conv.audio.file_id}',
+                                                 quality=other_quality)
+                except Exception as e:
+                    logger.error(f"Failed to perform dual quality upload for {other_quality}kbps: {e}")
 
                 file_size = os.path.getsize(mp3_path)
                 await self.api_client.log_download(user_id, str(track_id), track.get('trackName', ''),
