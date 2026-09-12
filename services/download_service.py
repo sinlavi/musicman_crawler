@@ -106,6 +106,24 @@ class DownloadService:
                     performer=performer,
                     duration=duration_sec
                 )
+
+                # Send 192kbps cached audio if track is longer than 8 minutes (480s)
+                if duration_sec is not None and duration_sec > 480 and str(quality_value) == "320":
+                    audio_192_cache = await get_cached_audio(track_id, quality="192")
+                    if audio_192_cache:
+                        try:
+                            logger.info(f"Sending cached 192kbps audio for long track {track_id}")
+                            await self.bot.send_audio(
+                                chat_id,
+                                audio=audio_192_cache,
+                                caption=self._build_caption(track, "192"),
+                                title=title,
+                                performer=performer,
+                                duration=duration_sec
+                            )
+                        except Exception as e_192:
+                            logger.error(f"Failed to send 192kbps cached audio: {e_192}")
+
                 if not is_batch: await safe_delete(status_msg)
                 await self.api_client.log_download(user_id, str(track_id), track.get('trackName', ''),
                                                    track.get('artistName', ''), track.get('collectionName', ''),
