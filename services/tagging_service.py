@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import Optional
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, TCOM, TCON, TDRC, TPOS, TRCK, COMM, TLEN, TXXX, TCOP, TPUB, USLT
+from mutagen.id3 import ID3, ID3NoHeaderError, TIT2, TPE1, TALB, APIC, TCOM, TCON, TDRC, TPOS, TRCK, COMM, TLEN, TXXX, TCOP, TPUB, USLT
 from core.logger import logger
 
 class TaggingService:
@@ -9,7 +9,10 @@ class TaggingService:
     def tag_mp3(file_path: Path, track_data: dict, cover_bytes: Optional[bytes] = None, lyrics: Optional[str] = None):
         """Add comprehensive ID3 metadata to the downloaded MP3 file."""
         try:
-            audio = ID3(file_path)
+            try:
+                audio = ID3(file_path)
+            except ID3NoHeaderError:
+                audio = ID3()
 
             # Basic track information
             if track_data.get('trackName'):
