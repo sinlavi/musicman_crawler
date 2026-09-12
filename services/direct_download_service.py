@@ -212,35 +212,37 @@ class DirectDownloadService:
                         thumbnail=cover_bytes
                     )
 
-                # DUAL UPLOAD for direct downloads: Always ensure both 320kbps and 192kbps are created & sent
+                # DUAL UPLOAD for direct downloads: Only send 192kbps in addition for audios longer than 8 minutes (480s)
                 other_quality = "192" if str(quality) == "320" else "320"
-                try:
-                    mp3_conv_path = str(mp3_path).replace(".mp3", f"_{other_quality}.mp3")
-                    if convert_bitrate(Path(mp3_path), Path(mp3_conv_path), other_quality):
-                        self.tagging_service.tag_mp3(mp3_conv_path, track_data, cover_bytes=cover_bytes, lyrics=lyrics_to_tag)
+                is_longer_than_8_min = duration_sec is not None and duration_sec > 480
+                if other_quality != "192" or is_longer_than_8_min:
+                    try:
+                        mp3_conv_path = str(mp3_path).replace(".mp3", f"_{other_quality}.mp3")
+                        if convert_bitrate(Path(mp3_path), Path(mp3_conv_path), other_quality):
+                            self.tagging_service.tag_mp3(mp3_conv_path, track_data, cover_bytes=cover_bytes, lyrics=lyrics_to_tag)
 
-                        fields_conv = {
-                            "🎵 نام آهنگ": track_name,
-                            "🎤 نام هنرمند": track_data.get('artistName'),
-                            "💿 نام آلبوم": track_data.get('collectionName'),
-                            "📀 کیفیت دانلود": f"{other_quality} kbps"
-                        }
-                        caption_conv = "\n".join([f"{k}: {v}" for k, v in fields_conv.items() if v and "Unknown" not in str(v)])
+                            fields_conv = {
+                                "🎵 نام آهنگ": track_name,
+                                "🎤 نام هنرمند": track_data.get('artistName'),
+                                "💿 نام آلبوم": track_data.get('collectionName'),
+                                "📀 کیفیت دانلود": f"{other_quality} kbps"
+                            }
+                            caption_conv = "\n".join([f"{k}: {v}" for k, v in fields_conv.items() if v and "Unknown" not in str(v)])
 
-                        with open(mp3_conv_path, 'rb') as f_conv:
-                            await self.bot.send_chat_action(chat_id, "upload_voice")
-                            logger.info(f"Direct uploading converted {other_quality}kbps audio: {track_data.get('trackName')}")
-                            await self.bot.send_audio(
-                                chat_id,
-                                audio=f_conv,
-                                caption=caption_conv,
-                                title=track_name,
-                                performer=track_data.get('artistName'),
-                                duration=duration_sec,
-                                thumbnail=cover_bytes
-                            )
-                except Exception as e:
-                    logger.error(f"Failed dual upload in direct download: {e}")
+                            with open(mp3_conv_path, 'rb') as f_conv:
+                                await self.bot.send_chat_action(chat_id, "upload_voice")
+                                logger.info(f"Direct uploading converted {other_quality}kbps audio: {track_data.get('trackName')}")
+                                await self.bot.send_audio(
+                                    chat_id,
+                                    audio=f_conv,
+                                    caption=caption_conv,
+                                    title=track_name,
+                                    performer=track_data.get('artistName'),
+                                    duration=duration_sec,
+                                    thumbnail=cover_bytes
+                                )
+                    except Exception as e:
+                        logger.error(f"Failed dual upload in direct download: {e}")
                 await safe_delete(status_msg)
                 return status_msg, True
             else:
