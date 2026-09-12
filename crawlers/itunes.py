@@ -149,15 +149,27 @@ async def lookup_itunes(id: Union[int, str], entity: Optional[str] = None, bypas
 
 
 async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str, mirror_url: str,
-                     quality: str = None) -> Optional[Dict[str, Any]]:
+                     quality: str = None, max_retries: int = 5) -> Optional[Dict[str, Any]]:
     payload = {"entityType": entity_type, "entityId": str(entity_id), "urlType": url_type, "mirrorUrl": mirror_url}
     if quality: payload["quality"] = quality
     logger.info(f"Setting mirror: {entity_type} {entity_id} {url_type} -> {mirror_url} ({quality})")
-    result = await fetch_itunes("mirror/set", method="POST", payload=payload)
-    if result and result.get("success"):
-        logger.info(f"Mirror set successful for {entity_id}, refreshing cache...")
-        await lookup_itunes(entity_id, entity=entity_type, bypass_cache=True, quality=quality)
-    return result
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = await fetch_itunes("mirror/set", method="POST", payload=payload)
+            if result and result.get("success"):
+                logger.info(f"Mirror set successful for {entity_id} ({url_type}, quality: {quality}), refreshing cache...")
+                await lookup_itunes(entity_id, entity=entity_type, bypass_cache=True, quality=quality)
+                return result
+            logger.warning(f"set_mirror attempt {attempt}/{max_retries} failed for {entity_id}: {result}")
+        except Exception as e:
+            logger.warning(f"set_mirror attempt {attempt}/{max_retries} exception for {entity_id}: {e}")
+
+        if attempt < max_retries:
+            await asyncio.sleep(2 * attempt)
+
+    logger.error(f"set_mirror failed after {max_retries} attempts for {entity_id}")
+    return None
 
 
 def extract_file_id(url: Optional[str]) -> Optional[str]:
