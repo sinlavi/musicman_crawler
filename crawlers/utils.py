@@ -9,6 +9,9 @@ import re
 logger = logging.getLogger("ABRAAVA:UTILS")
 music_adapter = MusicAdapter()
 
+# Precompiled regex for splitting non-word characters and underscores (supports Unicode letters like 'Beyoncé' or 'Motörhead')
+RE_NON_WORD_OR_UNDERSCORE = re.compile(r"[\W_]+")
+
 # Cache formatted hashtag results (e.g. artist and genre names) to avoid redundant regex splits and string processing (~25x speedup)
 @lru_cache(maxsize=1024)
 def format_artist_hashtag(artist_name: Optional[str]) -> str:
@@ -16,8 +19,8 @@ def format_artist_hashtag(artist_name: Optional[str]) -> str:
         return ""
     # Replace & with And (with spaces to ensure separate words for CamelCase)
     name = str(artist_name).replace("&", " And ")
-    # Split by non-alphanumeric characters to ensure clean CamelCase
-    words = re.split(r'[^a-zA-Z0-9]+', name)
+    # Split by non-word characters/underscores to support international/Unicode names while preserving clean CamelCase
+    words = RE_NON_WORD_OR_UNDERSCORE.split(name)
     # Capitalize each word and join (CamelCase)
     camel_case = "".join(word.capitalize() for word in words if word)
     return f"#{camel_case}" if camel_case else ""
