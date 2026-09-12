@@ -29,11 +29,14 @@
               <a class="nav-link" href="#features">Features</a>
             </li>
             <li class="nav-item">
+              <a class="nav-link" href="#guide">How It Works</a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="#architecture">Architecture</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="https://github.com/3rah/musicman" target="_blank" rel="noopener noreferrer">
-                <i class="bi bi-github me-1"></i>GitHub
+              <a class="nav-link" href="https://github.com/sinlavi/musicman_crawler" target="_blank" rel="noopener noreferrer">
+                <i class="bi bi-github me-1"></i>GitHub Repository
               </a>
             </li>
           </ul>
@@ -60,22 +63,85 @@
             High-Performance <span class="text-primary">Distributed Music</span> Processing Engine
           </h1>
           <p class="lead text-secondary mb-4 fs-5">
-            Automated queue polling, iTunes &amp; YouTube Music audio extraction, HD artwork embedding, ID3 tagging, voice previews, and instant Telegram channel delivery.
+            Automated queue polling, iTunes &amp; YouTube Music audio extraction, HD artwork embedding, ID3 tagging, voice previews, 192kbps + 320kbps dual quality rendering, and instant Telegram delivery.
           </p>
           <div class="d-flex flex-wrap gap-3 justify-content-center">
             <a href="https://mm.3rah.ir" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg px-4 py-2 fw-semibold">
               <i class="bi bi-globe me-2"></i>Access Project Instance (mm.3rah.ir)
             </a>
-            <a href="https://github.com/3rah/musicman" target="_blank" rel="noopener noreferrer" class="btn btn-outline-light btn-lg px-4 py-2 fw-semibold">
-              <i class="bi bi-star me-2"></i>View on GitHub
+            <a href="https://github.com/sinlavi/musicman_crawler" target="_blank" rel="noopener noreferrer" class="btn btn-outline-light btn-lg px-4 py-2 fw-semibold">
+              <i class="bi bi-github me-2"></i>View Repository on GitHub
             </a>
           </div>
         </div>
       </div>
     </section>
 
+    <!-- Guide & Learning Section -->
+    <section class="py-5 bg-body-tertiary border-top border-bottom border-secondary-subtle" id="guide">
+      <div class="container py-4">
+        <div class="text-center mb-5">
+          <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-3 py-2 rounded-pill fw-semibold mb-2">User &amp; API Guide</span>
+          <h2 class="display-6 fw-bold text-white mb-2">How to Work with mm.3rah.ir</h2>
+          <p class="text-secondary fs-5 mx-auto" style="max-width: 700px;">
+            Learn how the web service queue, distributed crawlers, and Telegram delivery engine process requests end-to-end.
+          </p>
+        </div>
+
+        <div class="row g-4">
+          <div class="col-md-6 col-lg-3">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle">
+              <div class="card-body p-4">
+                <div class="fs-1 text-primary mb-3">1️⃣</div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Queue Submission</h3>
+                <p class="card-text text-secondary small">
+                  Users submit music download requests through the main web application at <code>mm.3rah.ir</code> or connected Telegram bot interfaces.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6 col-lg-3">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle">
+              <div class="card-body p-4">
+                <div class="fs-1 text-info mb-3">2️⃣</div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Distributed Worker Sharding</h3>
+                <p class="card-text text-secondary small">
+                  Distributed crawler instances poll the API queue using modulo sharding (<code>download_id % TOTAL_INSTANCES</code>) to fetch tasks without lock collisions.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6 col-lg-3">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle">
+              <div class="card-body p-4">
+                <div class="fs-1 text-warning mb-3">3️⃣</div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Dual Bitrate Processing</h3>
+                <p class="card-text text-secondary small">
+                  Tracks are downloaded at maximum resolution (320 kbps), tagged with HD covers and lyrics, and automatically converted to produce both <strong>192 kbps</strong> and <strong>320 kbps</strong> audio files.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6 col-lg-3">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle">
+              <div class="card-body p-4">
+                <div class="fs-1 text-success mb-3">4️⃣</div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Telegram &amp; API Upload</h3>
+                <p class="card-text text-secondary small">
+                  Processed audio files and instant 30s voice previews are delivered directly to Telegram channels and mirrored back to backend storage.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Features Section -->
-    <section class="py-5 bg-body-tertiary border-top border-bottom border-secondary-subtle" id="features">
+    <section class="py-5" id="features">
       <div class="container py-4">
         <div class="text-center mb-5">
           <h2 class="display-6 fw-bold text-white mb-2">Engineered for Scale &amp; Precision</h2>
@@ -118,11 +184,11 @@
             <div class="card h-100 bg-dark text-light border-secondary-subtle shadow-sm">
               <div class="card-body p-4">
                 <div class="fs-2 text-warning mb-3">
-                  <i class="bi bi-mic-fill"></i>
+                  <i class="bi bi-file-music-fill"></i>
                 </div>
-                <h3 class="card-title h5 fw-bold text-white mb-2">Voice Preview Generation</h3>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Dual Quality (192 + 320 kbps)</h3>
                 <p class="card-text text-secondary">
-                  Extracts high-quality 30-second audio snippets tailored for Telegram voice previews, enabling instant audio listening before full download.
+                  Automatically generates and uploads both <strong>192 kbps</strong> and <strong>320 kbps</strong> audio formats for every track, catering to all network conditions.
                 </p>
               </div>
             </div>
@@ -177,8 +243,8 @@
     </section>
 
     <!-- Architecture Section -->
-    <section class="py-5 container" id="architecture">
-      <div class="py-4">
+    <section class="py-5 bg-body-tertiary border-top border-bottom border-secondary-subtle" id="architecture">
+      <div class="container py-4">
         <div class="text-center mb-5">
           <h2 class="display-6 fw-bold text-white mb-2">System Architecture Flow</h2>
           <p class="text-secondary fs-5">Distributed workflow from queue polling to Telegram channel broadcast.</p>
