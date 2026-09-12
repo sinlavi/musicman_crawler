@@ -22,7 +22,7 @@ from services.tagging_service import TaggingService
 from services.error_notifier import BaleUploadErrorNotifier
 from services.download_service import DownloadService
 from services.lyrics_service import lyrics_service
-from crawlers.itunes import get_download_queue, update_download_status, reset_stuck_downloads
+from crawlers.itunes import get_download_queue, update_download_status, reset_stuck_downloads, set_mirror
 
 import asyncio
 import signal
@@ -64,25 +64,30 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
                 track = track_data["results"][0]
                 await update_download_status(download_id, "downloading", percent=5)
 
-                # 2. Upload Artwork
-                artwork_url = get_high_res_artwork(track.get("artworkUrl100"), 400)
-                if artwork_url:
-                    coll_id = track.get("collectionId") or track_id
-                    # Use lock to prevent duplicate concurrent uploads for the same collection
-                    async with artwork_lock:
-                        # We need to adapt ArtworkService or just use it as is if it doesn't strictly depend on balethon for get_cached_artwork_url
-                        if not await artwork_service.get_cached_artwork_url("collection", coll_id):
-                            artwork_bytes = await artwork_service.get_artwork_for_display("collection", coll_id, artwork_url, user_id)
-                            if artwork_bytes:
-                                caption = f"🖼 *کاور آهنگ:* {track.get('trackName')} - {track.get('artistName')}"
-                                # Adapt send_artwork_photo if needed, but for now we follow the goal of hardcoding target chat
-                                await bot.send_photo(TARGET_CHANNEL_ID, photo=artwork_bytes, caption=caption)
+                # 2 & 3. Process Artwork & Voice Preview concurrently
+                async def _upload_artwork_task():
+                    artwork_url = get_high_res_artwork(track.get("artworkUrl100"), 400)
+                    if artwork_url:
+                        coll_id = track.get("collectionId") or track_id
+                        # Use lock to prevent duplicate concurrent uploads for the same collection
+                        async with artwork_lock:
+                            if not await artwork_service.get_cached_artwork_url("collection", coll_id):
+                                artwork_bytes = await artwork_service.get_artwork_for_display("collection", coll_id, artwork_url, user_id)
+                                if artwork_bytes:
+                                    caption = f"🖼 *کاور آهنگ:* {track.get('trackName')} - {track.get('artistName')}"
+                                    photo_msg = await bot.send_photo(TARGET_CHANNEL_ID, photo=artwork_bytes, caption=caption)
+                                    if photo_msg and photo_msg.photo:
+                                        file_id = photo_msg.photo[-1].file_id
+                                        mirror_url = f"https://api.telegram.org/file/bot<token>/{file_id}"
+                                        await set_mirror("collection", str(coll_id), "artworkUrl", mirror_url)
+                                        await set_mirror("track", str(track_id), "artworkUrl", mirror_url)
 
-                await update_download_status(download_id, "downloading", percent=10)
+                async def _upload_preview_task():
+                    if track.get("previewUrl"):
+                        await send_voice_preview(bot, TARGET_CHANNEL_ID, track_id, user_id, silent=True)
 
-                # 3. Upload Preview
-                if track.get("previewUrl"):
-                    await send_voice_preview(bot, TARGET_CHANNEL_ID, track_id, user_id, silent=True)
+                # Parallelize I/O bound tasks (artwork processing/mirroring and voice preview upload)
+                await asyncio.gather(_upload_artwork_task(), _upload_preview_task())
 
                 await update_download_status(download_id, "downloading", percent=15)
 
