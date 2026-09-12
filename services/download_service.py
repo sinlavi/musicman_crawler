@@ -264,7 +264,7 @@ class DownloadService:
                 # DUAL UPLOAD: Only send 192kbps in addition for audios longer than 8 minutes (480s)
                 other_quality = "192" if str(quality_value) == "320" else "320"
                 is_longer_than_8_min = duration_sec is not None and duration_sec > 480
-                if other_quality != "192" or is_longer_than_8_min:
+                if other_quality == "192" and is_longer_than_8_min:
                     try:
                         status_msg = await self._update_status(chat_id, status_msg, f"🔄 *در حال تبدیل به کیفیت {other_quality}kbps...*",
                                                                status_prefix, is_batch, silent=silent)
