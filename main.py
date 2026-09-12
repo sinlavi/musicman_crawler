@@ -1,4 +1,4 @@
-from core.config import TG_TOKEN, INFO_CHANNEL_ID, OFFLINE_MODE, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID
+from core.config import TG_TOKEN, INFO_CHANNEL_ID, OFFLINE_MODE, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY
 import os
 
 # Set global proxy environment variables
@@ -33,6 +33,7 @@ import time
 INSTANCE_ID = int(os.getenv("INSTANCE_ID", "1"))
 TOTAL_INSTANCES = int(os.getenv("TOTAL_INSTANCES", "1"))
 MAX_RUNTIME = int(os.getenv("MAX_RUNTIME", 5.5 * 3600)) # 5.5 hours default
+MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "10"))
 START_TIME = time.time()
 
 # Target Chat ID from config
@@ -41,12 +42,12 @@ TARGET_CHANNEL_ID = TARGET_CHAT_ID
 # Lock to prevent concurrent artwork uploads for the same collection
 artwork_lock = asyncio.Lock()
 
-async def process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks):
+async def process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event=None):
     download_id = item.get("download_id")
     track_id = item.get("trackId")
-    quality = item.get("quality", "192")
+    quality = str(item.get("quality") or DEFAULT_QUALITY)
 
-    logger.info(f"Processing download {download_id} for track {track_id}")
+    logger.info(f"Processing download {download_id} for track {track_id} (quality: {quality})")
 
     try:
         max_attempts = 3
@@ -118,12 +119,13 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
                     await update_download_status(download_id, "failed", error_message=str(e))
     finally:
         active_tasks.discard(download_id)
+        if task_done_event:
+            task_done_event.set()
 
 
 async def run_crawler():
     # Initialize Services
     api_client = APIClient(API_BASE_URL, API_TOKEN)
-    # user_settings_service removed
     artwork_service = ArtworkService(api_client, None) # Passed None for user_settings_service
     download_rate_limiter = DownloadRateLimiter()
     album_tracker = AlbumDownloadTracker(api_client)
@@ -140,7 +142,7 @@ async def run_crawler():
         download_service = DownloadService(bot, api_client, artwork_service,
                                            tagging_service, error_notifier, album_tracker, download_rate_limiter)
 
-        logger.info(f"ABRAAVA Crawler Instance {INSTANCE_ID}/{TOTAL_INSTANCES} initialized and starting poll loop...")
+        logger.info(f"ABRAAVA Crawler Instance {INSTANCE_ID}/{TOTAL_INSTANCES} initialized with max concurrent tasks {MAX_CONCURRENT_TASKS}...")
 
         # Only the primary instance resets stuck downloads to avoid race conditions
         if INSTANCE_ID == 1:
@@ -148,6 +150,7 @@ async def run_crawler():
 
         active_tasks = set()
         consecutive_tech_errors = 0
+        task_done_event = asyncio.Event()
 
         while True:
             # Check for runtime limit
@@ -156,40 +159,61 @@ async def run_crawler():
                 # Wait for remaining tasks
                 if active_tasks:
                     logger.info(f"Waiting for {len(active_tasks)} remaining tasks to complete...")
-                    # Give them some time but not forever
                     for _ in range(30):
                         if not active_tasks: break
-                        await asyncio.sleep(30)
+                        await asyncio.sleep(10)
                 break
 
-            try:
-                # Poll for pending downloads
-                queue_resp = await get_download_queue(status="pending", limit=100)
+            # Calculate available slots
+            available_slots = MAX_CONCURRENT_TASKS - len(active_tasks)
 
-                # Check for technical error (get_download_queue returns None on tech error)
+            if available_slots <= 0:
+                # Worker pool full, wait for any active task to finish
+                task_done_event.clear()
+                try:
+                    await asyncio.wait_for(task_done_event.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    pass
+                continue
+
+            try:
+                # Poll for pending downloads to fill open slots
+                fetch_limit = max(available_slots * 2, 20)
+                queue_resp = await get_download_queue(status="pending", limit=fetch_limit)
+
+                # Check for technical error
                 if queue_resp is None:
                     consecutive_tech_errors += 1
                     logger.warning(f"Technical error encountered ({consecutive_tech_errors}/10)")
                     if consecutive_tech_errors >= 10:
                         logger.critical("Too many consecutive technical errors. Exiting for workflow restart...")
                         sys.exit(1)
-                    await asyncio.sleep(50) # Conservative sleep on tech error
+                    await asyncio.sleep(10)
                     continue
 
-                # Reset error counter on any non-technical response (even if success=False or no items)
+                # Reset error counter on any non-technical response
                 consecutive_tech_errors = 0
 
                 if not queue_resp.get("success") or not queue_resp.get("items"):
-                    logger.debug("No pending downloads found. Sleeping...")
-                    await asyncio.sleep(20) # Conservative polling frequency
+                    logger.debug("No pending downloads found. Sleeping briefly...")
+                    if active_tasks:
+                        task_done_event.clear()
+                        try:
+                            await asyncio.wait_for(task_done_event.wait(), timeout=3.0)
+                        except asyncio.TimeoutError:
+                            pass
+                    else:
+                        await asyncio.sleep(5)
                     continue
 
                 items = queue_resp.get("items", [])
-
-                # Use a dummy user_id (Admin ID)
                 user_id = 234591600
+                tasks_started = 0
 
                 for item in items:
+                    if len(active_tasks) >= MAX_CONCURRENT_TASKS:
+                        break
+
                     download_id = item.get("download_id")
 
                     # Sharding logic: only process items that belong to this instance
@@ -200,21 +224,24 @@ async def run_crawler():
                         continue
 
                     active_tasks.add(download_id)
-                    # Launch task without waiting
-                    asyncio.create_task(process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks))
+                    tasks_started += 1
+                    asyncio.create_task(
+                        process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event)
+                    )
 
-                    # Stagger task start slightly to prevent rate limiting
-                    await asyncio.sleep(0.05)
-
-                # Small delay before next poll if we have many active tasks to avoid overwhelming
-                if len(active_tasks) > 50:
-                    await asyncio.sleep(35)
-                else:
-                    await asyncio.sleep(30)
+                if tasks_started == 0:
+                    if active_tasks:
+                        task_done_event.clear()
+                        try:
+                            await asyncio.wait_for(task_done_event.wait(), timeout=2.0)
+                        except asyncio.TimeoutError:
+                            pass
+                    else:
+                        await asyncio.sleep(5)
 
             except Exception as e:
                 logger.exception(f"Crawler loop error: {e}")
-                await asyncio.sleep(30)
+                await asyncio.sleep(5)
 
 def signal_handler(sig, frame):
     sys.exit(0)
