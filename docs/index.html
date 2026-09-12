@@ -1,463 +1,197 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MusicMan - Distributed Music Crawler & Bot Service</title>
   <meta name="description" content="High-performance distributed music crawler, metadata tagging engine, and Telegram bot service.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-primary: #0b0f19;
-      --bg-secondary: #111827;
-      --bg-card: rgba(17, 24, 39, 0.7);
-      --border-card: rgba(255, 255, 255, 0.08);
-      --accent-primary: #6366f1;
-      --accent-secondary: #a855f7;
-      --accent-glow: rgba(99, 102, 241, 0.25);
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
-      --text-highlight: #38bdf8;
-      --card-hover-border: rgba(99, 102, 241, 0.4);
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: var(--bg-primary);
-      color: var(--text-main);
-      line-height: 1.6;
-      overflow-x: hidden;
-      background-image:
-        radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
-        radial-gradient(circle at 85% 65%, rgba(168, 85, 247, 0.12) 0%, transparent 40%);
-    }
-
-    /* Container */
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    /* Header Navigation */
-    header {
-      padding: 24px 0;
-      border-bottom: 1px solid var(--border-card);
-      backdrop-filter: blur(12px);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(11, 15, 25, 0.8);
-    }
-
-    .nav-container {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 1.35rem;
-      font-weight: 800;
-      color: #fff;
-      text-decoration: none;
-      letter-spacing: -0.02em;
-    }
-
-    .logo-icon {
-      width: 40px;
-      height: 40px;
-      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      box-shadow: 0 4px 14px var(--accent-glow);
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 28px;
-      list-style: none;
-    }
-
-    .nav-links a {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-weight: 500;
-      font-size: 0.95rem;
-      transition: color 0.2s ease;
-    }
-
-    .nav-links a:hover {
-      color: var(--text-main);
-    }
-
-    .btn-main {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-      color: #fff;
-      font-weight: 600;
-      font-size: 0.95rem;
-      padding: 10px 22px;
-      border-radius: 10px;
-      text-decoration: none;
-      box-shadow: 0 4px 16px var(--accent-glow);
-      transition: all 0.25s ease;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-    }
-
-    .btn-main:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
-    }
-
-    /* Hero Section */
-    .hero {
-      padding: 100px 0 60px;
-      text-align: center;
-      position: relative;
-    }
-
-    .badge-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: rgba(99, 102, 241, 0.12);
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      color: #818cf8;
-      padding: 6px 16px;
-      border-radius: 30px;
-      font-size: 0.875rem;
-      font-weight: 600;
-      margin-bottom: 24px;
-    }
-
-    .pulse-dot {
-      width: 8px;
-      height: 8px;
-      background-color: #34d399;
-      border-radius: 50%;
-      box-shadow: 0 0 8px #34d399;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0% { opacity: 0.6; transform: scale(0.95); }
-      50% { opacity: 1; transform: scale(1.1); }
-      100% { opacity: 0.6; transform: scale(0.95); }
-    }
-
-    .hero-title {
-      font-size: 3.5rem;
-      font-weight: 800;
-      line-height: 1.15;
-      margin-bottom: 20px;
-      letter-spacing: -0.03em;
-      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .hero-title span {
-      background: linear-gradient(135deg, #818cf8, #c084fc);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .hero-subtitle {
-      font-size: 1.25rem;
-      color: var(--text-muted);
-      max-width: 760px;
-      margin: 0 auto 36px;
-      font-weight: 400;
-    }
-
-    .hero-actions {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .btn-secondary {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--bg-secondary);
-      color: var(--text-main);
-      font-weight: 600;
-      font-size: 0.95rem;
-      padding: 10px 22px;
-      border-radius: 10px;
-      text-decoration: none;
-      border: 1px solid var(--border-card);
-      transition: all 0.25s ease;
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.05);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-
-    /* Features Grid */
-    .features {
-      padding: 80px 0;
-    }
-
-    .section-header {
-      text-align: center;
-      margin-bottom: 56px;
-    }
-
-    .section-title {
-      font-size: 2.25rem;
-      font-weight: 700;
-      margin-bottom: 12px;
-      letter-spacing: -0.02em;
-    }
-
-    .section-desc {
-      color: var(--text-muted);
-      font-size: 1.1rem;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 24px;
-    }
-
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 16px;
-      padding: 32px;
-      backdrop-filter: blur(12px);
-      transition: all 0.3s ease;
-    }
-
-    .card:hover {
-      border-color: var(--card-hover-border);
-      transform: translateY(-4px);
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
-    }
-
-    .card-icon {
-      width: 48px;
-      height: 48px;
-      background: rgba(99, 102, 241, 0.12);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-      margin-bottom: 20px;
-      color: #818cf8;
-    }
-
-    .card-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      margin-bottom: 10px;
-    }
-
-    .card-text {
-      color: var(--text-muted);
-      font-size: 0.95rem;
-      line-height: 1.6;
-    }
-
-    /* Architecture / Flow Section */
-    .architecture {
-      padding: 60px 0 80px;
-    }
-
-    .arch-box {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-card);
-      border-radius: 16px;
-      padding: 32px;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-highlight);
-      font-size: 0.9rem;
-      overflow-x: auto;
-      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
-    }
-
-    /* Live Link Banner */
-    .banner {
-      margin: 60px 0;
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      border-radius: 20px;
-      padding: 48px 32px;
-      text-align: center;
-      position: relative;
-    }
-
-    .banner-title {
-      font-size: 2rem;
-      font-weight: 800;
-      margin-bottom: 12px;
-    }
-
-    .banner-text {
-      color: var(--text-muted);
-      font-size: 1.1rem;
-      max-width: 600px;
-      margin: 0 auto 28px;
-    }
-
-    /* Footer */
-    footer {
-      padding: 40px 0;
-      border-top: 1px solid var(--border-card);
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 0.9rem;
-    }
-
-    footer a {
-      color: #818cf8;
-      text-decoration: none;
-    }
-
-    @media (max-width: 768px) {
-      .hero-title {
-        font-size: 2.5rem;
-      }
-      .nav-links {
-        display: none;
-      }
-    }
-  </style>
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
-<body>
+<body class="bg-dark text-light d-flex flex-column min-vh-100">
 
-  <!-- Navigation -->
-  <header>
-    <div class="container nav-container">
-      <a href="#" class="logo">
-        <div class="logo-icon">🎵</div>
-        <span>MusicMan</span>
-      </a>
-      <ul class="nav-links">
-        <li><a href="#features">Features</a></li>
-        <li><a href="#architecture">Architecture</a></li>
-        <li><a href="https://github.com/3rah/musicman" target="_blank">GitHub</a></li>
-      </ul>
-      <a href="https://mm.3rah.ir" target="_blank" class="btn-main">
-        🚀 Open Main Instance
-      </a>
-    </div>
+  <!-- Header Navigation -->
+  <header class="sticky-top">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark bg-opacity-75 border-bottom border-secondary-subtle backdrop-blur">
+      <div class="container">
+        <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="#">
+          <span class="fs-4">🎵</span>
+          <span>MusicMan</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4">
+            <li class="nav-item">
+              <a class="nav-link" href="#features">Features</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#architecture">Architecture</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="https://github.com/3rah/musicman" target="_blank" rel="noopener noreferrer">
+                <i class="bi bi-github me-1"></i>GitHub
+              </a>
+            </li>
+          </ul>
+          <div class="d-flex align-items-center gap-2">
+            <a href="https://mm.3rah.ir" target="_blank" rel="noopener noreferrer" class="btn btn-primary fw-semibold">
+              <i class="bi bi-box-arrow-up-right me-1"></i>Open Main Instance
+            </a>
+          </div>
+        </div>
+      </div>
+    </nav>
   </header>
 
-  <!-- Hero Section -->
-  <section class="hero">
-    <div class="container">
-      <div class="badge-pill">
-        <span class="pulse-dot"></span> Active Main Instance: mm.3rah.ir
-      </div>
-      <h1 class="hero-title">High-Performance <span>Distributed Music</span> Processing Engine</h1>
-      <p class="hero-subtitle">
-        Automated queue polling, iTunes & YouTube Music audio extraction, HD artwork embedding, ID3 tagging, voice previews, and instant Telegram channel delivery.
-      </p>
-      <div class="hero-actions">
-        <a href="https://mm.3rah.ir" target="_blank" class="btn-main">
-          🌐 Access Project Instance (mm.3rah.ir)
-        </a>
-        <a href="https://github.com/3rah/musicman" target="_blank" class="btn-secondary">
-          ⭐ View on GitHub
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- Features Grid -->
-  <section class="features" id="features">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title">Engineered for Scale & Precision</h2>
-        <p class="section-desc">Everything needed to process, enrich, and deliver digital music at scale.</p>
-      </div>
-
-      <div class="grid">
-        <div class="card">
-          <div class="card-icon">⚡</div>
-          <h3 class="card-title">Distributed Modulo Sharding</h3>
-          <p class="card-text">
-            Scales across unlimited parallel instances using deterministic <code>download_id % TOTAL_INSTANCES</code> sharding. Eliminates task collisions without external broker overhead.
+  <main class="flex-grow-1">
+    <!-- Hero Section -->
+    <section class="py-5 py-lg-6 text-center container">
+      <div class="row py-lg-4 justify-content-center">
+        <div class="col-lg-10 col-xl-8">
+          <div class="d-inline-flex align-items-center gap-2 px-3 py-1 mb-4 rounded-pill bg-primary bg-opacity-10 border border-primary border-opacity-25 text-primary">
+            <span class="spinner-grow spinner-grow-sm text-success" role="status" aria-hidden="true"></span>
+            <span class="fw-semibold small">Active Main Instance: mm.3rah.ir</span>
+          </div>
+          <h1 class="display-4 fw-extrabold text-white mb-3">
+            High-Performance <span class="text-primary">Distributed Music</span> Processing Engine
+          </h1>
+          <p class="lead text-secondary mb-4 fs-5">
+            Automated queue polling, iTunes &amp; YouTube Music audio extraction, HD artwork embedding, ID3 tagging, voice previews, and instant Telegram channel delivery.
           </p>
-        </div>
-
-        <div class="card">
-          <div class="card-icon">🎨</div>
-          <h3 class="card-title">HD Artwork & ID3 Enrichment</h3>
-          <p class="card-text">
-            Injects high-resolution cover art (up to 3000x3000px), title, artist, album, release year, genre, and lyrics directly into standard ID3 audio tags.
-          </p>
-        </div>
-
-        <div class="card">
-          <div class="card-icon">🎙️</div>
-          <h3 class="card-title">Voice Preview Generation</h3>
-          <p class="card-text">
-            Extracts high-quality 30-second audio snippets tailored for Telegram voice previews, enabling instant audio listening before full download.
-          </p>
-        </div>
-
-        <div class="card">
-          <div class="card-icon">🔄</div>
-          <h3 class="card-title">Self-Healing Queue Recovery</h3>
-          <p class="card-text">
-            Primary instances detect crashed or interrupted tasks and reset stuck downloads back to pending status with exponential backoff on technical errors.
-          </p>
-        </div>
-
-        <div class="card">
-          <div class="card-icon">🌐</div>
-          <h3 class="card-title">Cloudflare WARP Integration</h3>
-          <p class="card-text">
-            Built-in support for Cloudflare WARP SOCKS5 proxy routing to bypass geo-restrictions and platform rate limiting seamlessly.
-          </p>
-        </div>
-
-        <div class="card">
-          <div class="card-icon">📜</div>
-          <h3 class="card-title">Synced Lyrics Fetching</h3>
-          <p class="card-text">
-            Queries LRCLIB and lyrics services for synchronized (.lrc) and plain text lyrics, embedding them directly into track files.
-          </p>
+          <div class="d-flex flex-wrap gap-3 justify-content-center">
+            <a href="https://mm.3rah.ir" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg px-4 py-2 fw-semibold">
+              <i class="bi bi-globe me-2"></i>Access Project Instance (mm.3rah.ir)
+            </a>
+            <a href="https://github.com/3rah/musicman" target="_blank" rel="noopener noreferrer" class="btn btn-outline-light btn-lg px-4 py-2 fw-semibold">
+              <i class="bi bi-star me-2"></i>View on GitHub
+            </a>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Architecture -->
-  <section class="architecture" id="architecture">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title">System Architecture Flow</h2>
-        <p class="section-desc">Distributed workflow from queue polling to Telegram channel broadcast.</p>
+    <!-- Features Section -->
+    <section class="py-5 bg-body-tertiary border-top border-bottom border-secondary-subtle" id="features">
+      <div class="container py-4">
+        <div class="text-center mb-5">
+          <h2 class="display-6 fw-bold text-white mb-2">Engineered for Scale &amp; Precision</h2>
+          <p class="text-secondary fs-5">Everything needed to process, enrich, and deliver digital music at scale.</p>
+        </div>
+
+        <div class="row g-4">
+          <!-- Feature Card 1 -->
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle shadow-sm">
+              <div class="card-body p-4">
+                <div class="fs-2 text-primary mb-3">
+                  <i class="bi bi-lightning-charge-fill"></i>
+                </div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Distributed Modulo Sharding</h3>
+                <p class="card-text text-secondary">
+                  Scales across unlimited parallel instances using deterministic <code class="text-primary-emphasis bg-primary bg-opacity-10 px-2 py-1 rounded">download_id % TOTAL_INSTANCES</code> sharding. Eliminates task collisions without external broker overhead.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feature Card 2 -->
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle shadow-sm">
+              <div class="card-body p-4">
+                <div class="fs-2 text-info mb-3">
+                  <i class="bi bi-palette-fill"></i>
+                </div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">HD Artwork &amp; ID3 Enrichment</h3>
+                <p class="card-text text-secondary">
+                  Injects high-resolution cover art (up to 3000x3000px), title, artist, album, release year, genre, and lyrics directly into standard ID3 audio tags.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feature Card 3 -->
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle shadow-sm">
+              <div class="card-body p-4">
+                <div class="fs-2 text-warning mb-3">
+                  <i class="bi bi-mic-fill"></i>
+                </div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Voice Preview Generation</h3>
+                <p class="card-text text-secondary">
+                  Extracts high-quality 30-second audio snippets tailored for Telegram voice previews, enabling instant audio listening before full download.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feature Card 4 -->
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle shadow-sm">
+              <div class="card-body p-4">
+                <div class="fs-2 text-success mb-3">
+                  <i class="bi bi-arrow-repeat"></i>
+                </div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Self-Healing Queue Recovery</h3>
+                <p class="card-text text-secondary">
+                  Primary instances detect crashed or interrupted tasks and reset stuck downloads back to pending status with exponential backoff on technical errors.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feature Card 5 -->
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle shadow-sm">
+              <div class="card-body p-4">
+                <div class="fs-2 text-danger mb-3">
+                  <i class="bi bi-shield-lock-fill"></i>
+                </div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Cloudflare WARP Integration</h3>
+                <p class="card-text text-secondary">
+                  Built-in support for Cloudflare WARP SOCKS5 proxy routing to bypass geo-restrictions and platform rate limiting seamlessly.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feature Card 6 -->
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 bg-dark text-light border-secondary-subtle shadow-sm">
+              <div class="card-body p-4">
+                <div class="fs-2 text-purple mb-3" style="color: #a855f7;">
+                  <i class="bi bi-file-text-fill"></i>
+                </div>
+                <h3 class="card-title h5 fw-bold text-white mb-2">Synced Lyrics Fetching</h3>
+                <p class="card-text text-secondary">
+                  Queries LRCLIB and lyrics services for synchronized (.lrc) and plain text lyrics, embedding them directly into track files.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="arch-box">
+    </section>
+
+    <!-- Architecture Section -->
+    <section class="py-5 container" id="architecture">
+      <div class="py-4">
+        <div class="text-center mb-5">
+          <h2 class="display-6 fw-bold text-white mb-2">System Architecture Flow</h2>
+          <p class="text-secondary fs-5">Distributed workflow from queue polling to Telegram channel broadcast.</p>
+        </div>
+        <div class="row justify-content-center">
+          <div class="col-lg-10">
+            <div class="card bg-dark text-info border-secondary-subtle shadow">
+              <div class="card-header bg-dark-subtle border-secondary-subtle d-flex align-items-center gap-2">
+                <i class="bi bi-diagram-3-fill"></i>
+                <span class="fw-semibold text-light small">Architecture Diagram</span>
+              </div>
+              <div class="card-body overflow-x-auto p-4">
+                <pre class="mb-0 text-info font-monospace small">
 ┌─────────────────────────────────────────────────────────────┐
 │              Main Web Instance (https://mm.3rah.ir)         │
 └──────────────────────────────┬──────────────────────────────┘
@@ -474,27 +208,43 @@
      │ iTunes / YT  │   │ Tagging & HD │   │ Telegram Bot │
      │ Downloader   │   │ Artwork      │   │ Delivery     │
      └──────────────┘   └──────────────┘   └──────────────┘
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Banner Call to Action -->
-  <section class="container">
-    <div class="banner">
-      <h2 class="banner-title">Ready to Experience MusicMan?</h2>
-      <p class="banner-text">Visit our main live web platform to start processing and downloading music queues instantly.</p>
-      <a href="https://mm.3rah.ir" target="_blank" class="btn-main">
-        🚀 Visit Main Instance: mm.3rah.ir
-      </a>
-    </div>
-  </section>
+    <!-- CTA Banner Section -->
+    <section class="py-5 container">
+      <div class="card bg-primary bg-opacity-10 border-primary border-opacity-25 text-center p-4 p-md-5 rounded-4 shadow-sm">
+        <div class="card-body py-3">
+          <h2 class="display-6 fw-bold text-white mb-3">Ready to Experience MusicMan?</h2>
+          <p class="text-secondary fs-5 mb-4 mx-auto" style="max-width: 650px;">
+            Visit our main live web platform to start processing and downloading music queues instantly.
+          </p>
+          <a href="https://mm.3rah.ir" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg px-4 py-2 fw-semibold">
+            <i class="bi bi-rocket-takeoff-fill me-2"></i>Visit Main Instance: mm.3rah.ir
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <!-- Footer -->
-  <footer>
+  <footer class="py-4 bg-dark bg-opacity-75 border-top border-secondary-subtle text-center text-secondary mt-auto">
     <div class="container">
-      <p>MusicMan Distributed Crawler & Bot Service &bull; Main Web Instance: <a href="https://mm.3rah.ir" target="_blank">mm.3rah.ir</a></p>
+      <p class="mb-0 small">
+        MusicMan Distributed Crawler &amp; Bot Service &bull; Main Web Instance:
+        <a href="https://mm.3rah.ir" target="_blank" rel="noopener noreferrer" class="text-primary text-decoration-none fw-semibold">
+          mm.3rah.ir
+        </a>
+      </p>
     </div>
   </footer>
 
+  <!-- Bootstrap 5.3 JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>
