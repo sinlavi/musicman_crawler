@@ -47,6 +47,7 @@ COMMON_OPTS: dict = {
     "sleep_interval": 2,
     "max_sleep_interval": 6,
     "sleep_interval_requests": 1,
+    "socket_timeout": 20,
 }
 
 # ── Smart Method Sorting ────────────────────────────────────────────────

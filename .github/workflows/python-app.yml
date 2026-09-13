@@ -127,8 +127,8 @@ jobs:
               
               echo "🗑️ Deleting run ID: $RUN_ID (status: $RUN_STATUS)"
               
-              delete_run $RUN_ID
-              RESULT=$?
+              RESULT=0
+              delete_run $RUN_ID || RESULT=$?
               
               case $RESULT in
                 0)
