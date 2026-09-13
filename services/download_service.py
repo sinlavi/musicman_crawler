@@ -277,7 +277,7 @@ class DownloadService:
 
                     if msg and track_id:
                         mirror_res = await set_mirror('track', str(track_id), 'audioUrl',
-                                                     f'https://api.telegram.org/file/bot<token>/{msg.audio.file_id}',
+                                                     f'https://api.telegram.org/file/bot<token>/{msg.message_id}',
                                                      quality=quality_value)
                         if not mirror_res or not mirror_res.get("success"):
                             logger.error(f"Failed to set mirror for track {track_id} quality {quality_value} after retries")
@@ -327,7 +327,7 @@ class DownloadService:
                                     )
                                 if msg_conv and track_id:
                                     mirror_conv_res = await set_mirror('track', str(track_id), 'audioUrl',
-                                                                       f'https://api.telegram.org/file/bot<token>/{msg_conv.audio.file_id}',
+                                                                       f'https://api.telegram.org/file/bot<token>/{msg_conv.message_id}',
                                                                        quality=other_quality)
                                     if not mirror_conv_res or not mirror_conv_res.get("success"):
                                         logger.error(f"Failed to set mirror for converted track {track_id} quality {other_quality} after retries")
