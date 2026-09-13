@@ -55,8 +55,8 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
             # Update status to downloading
             await update_download_status(download_id, "downloading", percent=0)
 
-            # Process track
-            try:
+            # Process track with timeout (300 seconds / 5 minutes per attempt)
+            async def _process_track():
                 # 1. Fetch metadata
                 track_data = await get_track(track_id)
                 if not track_data or not track_data.get("results"):
@@ -109,10 +109,14 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
                 if success:
                     logger.info(f"Successfully processed download {download_id} on attempt {attempt}")
                     await update_download_status(download_id, "completed", percent=100)
-                    return
+                    return True
                 else:
                     raise Exception("Download or upload failed")
 
+            try:
+                success = await asyncio.wait_for(_process_track(), timeout=300.0)
+                if success:
+                    return
             except Exception as e:
                 logger.warning(f"Error processing download {download_id} (Attempt {attempt}/{max_attempts}): {e}")
                 if attempt < max_attempts:
@@ -186,7 +190,7 @@ async def run_crawler():
 
             try:
                 # Poll for pending downloads to fill open slots
-                fetch_limit = max(available_slots * 2, 20)
+                fetch_limit = max(available_slots * 5, 100)
                 queue_resp = await get_download_queue(status="pending", limit=fetch_limit)
 
                 # Check for technical error
@@ -226,8 +230,13 @@ async def run_crawler():
                     if download_id is None:
                         continue
 
+                    try:
+                        numeric_id = int(download_id)
+                    except (ValueError, TypeError):
+                        numeric_id = abs(hash(str(download_id)))
+
                     # Sharding logic: only process items that belong to this instance
-                    if download_id % TOTAL_INSTANCES != (INSTANCE_ID - 1):
+                    if numeric_id % TOTAL_INSTANCES != (INSTANCE_ID - 1):
                         continue
 
                     if download_id in active_tasks:
