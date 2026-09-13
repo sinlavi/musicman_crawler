@@ -38,7 +38,16 @@ async def send_voice_preview(bot: Bot, chat_id: int, track_id: int, user_id: int
         preview_cache = await get_cached_preview(track_id)
         if preview_cache:
             try:
-                await bot.send_voice(chat_id, voice=preview_cache, caption=caption)
+                sent = False
+                if str(preview_cache).isdigit() or (isinstance(preview_cache, str) and preview_cache.lstrip('-').isdigit()):
+                    try:
+                        from core.config import TARGET_CHAT_ID
+                        await bot.copy_message(chat_id, from_chat_id=TARGET_CHAT_ID, message_id=int(preview_cache))
+                        sent = True
+                    except Exception as copy_err:
+                        logger.warning(f"copy_message preview failed: {copy_err}")
+                if not sent:
+                    await bot.send_voice(chat_id, voice=preview_cache, caption=caption)
                 if not silent: await safe_delete(status_msg)
                 return status_msg
             except Exception as e:
