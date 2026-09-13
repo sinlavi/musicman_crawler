@@ -150,7 +150,22 @@ async def run_crawler():
 
     bot = Bot(token=TG_TOKEN, request=request)
 
-    async with bot:
+    # Initialize bot with fallback to direct connection if proxy fails
+    try:
+        await bot.initialize()
+    except Exception as e:
+        logger.warning(f"Bot initialization with proxy ({PROXY}) failed ({e}). Falling back to direct connection...")
+        request = HTTPXRequest(
+            proxy=None,
+            read_timeout=120.0,
+            write_timeout=120.0,
+            connect_timeout=60.0,
+            pool_timeout=60.0
+        )
+        bot = Bot(token=TG_TOKEN, request=request)
+        await bot.initialize()
+
+    try:
         download_service = DownloadService(bot, api_client, artwork_service,
                                            tagging_service, error_notifier, album_tracker, download_rate_limiter)
 
@@ -261,6 +276,8 @@ async def run_crawler():
             except Exception as e:
                 logger.exception(f"Crawler loop error: {e}")
                 await asyncio.sleep(5)
+    finally:
+        await bot.shutdown()
 
 def signal_handler(sig, frame):
     sys.exit(0)
