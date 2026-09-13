@@ -1,5 +1,7 @@
 import pytest
 from crawlers.youtube import COMMON_OPTS, _build_opts
+from services.download_service import _is_file_too_large_error as is_large_download
+from services.direct_download_service import _is_file_too_large_error as is_large_direct
 
 def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
@@ -24,8 +26,24 @@ def test_sharding_numeric_and_string_ids():
         assigned_instance = (numeric_id % total_instances) + 1
         assert 1 <= assigned_instance <= total_instances
 
+def test_file_too_large_error_matching():
+    errors = [
+        Exception("Request Entity Too Large"),
+        Exception("HTTP/1.1 413 Request Entity Too Large"),
+        Exception("Telegram error: file_too_large"),
+        Exception("File is too large"),
+    ]
+    for err in errors:
+        assert is_large_download(err) is True
+        assert is_large_direct(err) is True
+
+    other_err = Exception("Connection reset by peer")
+    assert is_large_download(other_err) is False
+    assert is_large_direct(other_err) is False
+
 if __name__ == "__main__":
     test_common_opts_socket_timeout()
     test_build_opts_includes_socket_timeout()
     test_sharding_numeric_and_string_ids()
-    print("Sharding and options tests passed!")
+    test_file_too_large_error_matching()
+    print("Sharding, options, and error matching tests passed!")

@@ -15,6 +15,13 @@ from core.http_client import HttpClient
 from utils.image_utils import crop_to_square
 from utils.audio_utils import convert_bitrate
 
+
+def _is_file_too_large_error(err: Exception) -> bool:
+    err_str = str(err).lower()
+    large_keywords = ["file is too large", "file_too_large", "request entity too large", "413"]
+    return any(keyword in err_str for keyword in large_keywords)
+
+
 # ── User‑agent list (Same as youtube crawler) ────────────────────
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -204,28 +211,58 @@ class DirectDownloadService:
                     await self.bot.send_chat_action(chat_id, "upload_voice")
                     logger.info(f"Direct uploading audio: {track_data.get('trackName')} ({quality}kbps)")
                     try:
-                        await self.bot.send_audio(
-                            chat_id,
-                            audio=f,
-                            caption=caption,
-                            title=track_name,
-                            performer=track_data.get('artistName'),
-                            duration=duration_sec,
-                            thumbnail=cover_bytes
-                        )
-                    except telegram.error.RetryAfter as e:
-                        logger.warning(f"Telegram flood control hit in direct download. Waiting {e.retry_after} seconds before retry.")
-                        await asyncio.sleep(e.retry_after)
-                        f.seek(0)
-                        await self.bot.send_audio(
-                            chat_id,
-                            audio=f,
-                            caption=caption,
-                            title=track_name,
-                            performer=track_data.get('artistName'),
-                            duration=duration_sec,
-                            thumbnail=cover_bytes
-                        )
+                        try:
+                            await self.bot.send_audio(
+                                chat_id,
+                                audio=f,
+                                caption=caption,
+                                title=track_name,
+                                performer=track_data.get('artistName'),
+                                duration=duration_sec,
+                                thumbnail=cover_bytes
+                            )
+                        except telegram.error.RetryAfter as e:
+                            logger.warning(f"Telegram flood control hit in direct download. Waiting {e.retry_after} seconds before retry.")
+                            await asyncio.sleep(e.retry_after)
+                            f.seek(0)
+                            await self.bot.send_audio(
+                                chat_id,
+                                audio=f,
+                                caption=caption,
+                                title=track_name,
+                                performer=track_data.get('artistName'),
+                                duration=duration_sec,
+                                thumbnail=cover_bytes
+                            )
+                    except Exception as e:
+                        if _is_file_too_large_error(e) and str(quality) == "320":
+                            logger.warning(f"Direct file too large for 320kbps (error: {e}), retrying with 192kbps: {track_name}")
+                            status_msg = await self._update_status(chat_id, status_msg, "⚠️ *حجم فایل زیاد است، در حال تبدیل به ۱۹۲...*")
+                            mp3_192_retry_path = str(mp3_path).replace(".mp3", "_retry_192.mp3")
+                            if convert_bitrate(Path(mp3_path), Path(mp3_192_retry_path), "192"):
+                                self.tagging_service.tag_mp3(mp3_192_retry_path, track_data, cover_bytes=cover_bytes, lyrics=lyrics_to_tag)
+                                fields_192 = {
+                                    "🎵 نام آهنگ": track_name,
+                                    "🎤 نام هنرمند": track_data.get('artistName'),
+                                    "💿 نام آلبوم": track_data.get('collectionName'),
+                                    "📀 کیفیت دانلود": "192 kbps"
+                                }
+                                caption_192 = "\n".join([f"{k}: {v}" for k, v in fields_192.items() if v and "Unknown" not in str(v)])
+                                with open(mp3_192_retry_path, 'rb') as f_retry:
+                                    await self.bot.send_audio(
+                                        chat_id,
+                                        audio=f_retry,
+                                        caption=caption_192,
+                                        title=track_name,
+                                        performer=track_data.get('artistName'),
+                                        duration=duration_sec,
+                                        thumbnail=cover_bytes
+                                    )
+                                quality = "192"
+                            else:
+                                raise e
+                        else:
+                            raise e
 
                 # DUAL UPLOAD for direct downloads: Only send 192kbps in addition for audios longer than 8 minutes (480s)
                 other_quality = "192" if str(quality) == "320" else "320"
