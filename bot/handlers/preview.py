@@ -52,7 +52,7 @@ async def send_voice_preview(bot: Bot, chat_id: int, track_id: int, user_id: int
                 preview_data.name = f"preview_{track_id}.mp3"
                 msg = await bot.send_voice(chat_id, voice=preview_data, caption=caption)
                 if msg and track_id:
-                    await set_mirror('track', str(track_id), 'previewUrl', f'https://api.telegram.org/file/bot<token>/{msg.voice.file_id}')
+                    await set_mirror('track', str(track_id), 'previewUrl', f'https://api.telegram.org/file/bot<token>/{msg.message_id}')
                 if not silent: await safe_delete(status_msg)
             else:
                 if not silent:
