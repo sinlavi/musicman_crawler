@@ -44,12 +44,12 @@ class ArtworkService:
             logger.error(f"Error getting cached artwork: {e}")
             return None
 
-    async def set_artwork_mirror(self, entity_type: str, entity_id: Union[int, str], file_id: str) -> bool:
+    async def set_artwork_mirror(self, entity_type: str, entity_id: Union[int, str], message_id: Union[int, str]) -> bool:
         try:
-            if not entity_id or not file_id: return False
+            if not entity_id or not message_id: return False
 
             # Using generic bot<token> placeholder
-            artwork_url = f'https://api.telegram.org/file/bot<token>/{file_id}'
+            artwork_url = f'https://api.telegram.org/file/bot<token>/{message_id}'
             result = await set_mirror(entity_type, str(entity_id), 'artworkUrl', artwork_url)
             return bool(result)
         except Exception as e:
@@ -113,9 +113,8 @@ class ArtworkService:
                     msg = await bot.send_photo(chat_id, photo=photo_io, caption=f"{caption}{FOOTER}")
 
                     if msg and msg.photo and entity_type and entity_id:
-                        # telegram.PhotoSize uses file_id
-                        file_id = msg.photo[-1].file_id
-                        await self.set_artwork_mirror(entity_type, entity_id, file_id)
+                        message_id = msg.message_id
+                        await self.set_artwork_mirror(entity_type, entity_id, message_id)
                 return msg
             except Exception as e:
                 logger.warning(f"Failed to send artwork: {e}")

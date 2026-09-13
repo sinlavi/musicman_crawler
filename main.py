@@ -79,9 +79,9 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
                                 if artwork_bytes:
                                     caption = f"🖼 *کاور آهنگ:* {track.get('trackName')} - {track.get('artistName')}"
                                     photo_msg = await bot.send_photo(TARGET_CHANNEL_ID, photo=artwork_bytes, caption=caption)
-                                    if photo_msg and photo_msg.photo:
-                                        file_id = photo_msg.photo[-1].file_id
-                                        mirror_url = f"https://api.telegram.org/file/bot<token>/{file_id}"
+                                    if photo_msg:
+                                        message_id = photo_msg.message_id
+                                        mirror_url = f"https://api.telegram.org/file/bot<token>/{message_id}"
                                         if coll_id:
                                             await set_mirror("collection", str(coll_id), "artworkUrl", mirror_url)
                                         if effective_track_id:
