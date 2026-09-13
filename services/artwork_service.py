@@ -106,7 +106,16 @@ class ArtworkService:
                     await bot.send_chat_action(chat_id, "upload_photo")
 
                 if isinstance(artwork_data, str):
-                    msg = await bot.send_photo(chat_id, photo=artwork_data, caption=f"{caption}{FOOTER}")
+                    sent = False
+                    if artwork_data.isdigit() or artwork_data.lstrip('-').isdigit():
+                        try:
+                            from core.config import TARGET_CHAT_ID
+                            msg = await bot.copy_message(chat_id, from_chat_id=TARGET_CHAT_ID, message_id=int(artwork_data))
+                            sent = True
+                        except Exception as copy_err:
+                            logger.warning(f"copy_message photo failed: {copy_err}")
+                    if not sent:
+                        msg = await bot.send_photo(chat_id, photo=artwork_data, caption=f"{caption}{FOOTER}")
                 else:
                     photo_io = io.BytesIO(artwork_data)
                     photo_io.name = "artwork.jpg"
