@@ -18,6 +18,12 @@ from utils.helpers import get_high_res_artwork, format_duration, generate_deep_l
 from utils.messages import send_message, edit_message, safe_delete
 
 
+def _is_file_too_large_error(err: Exception) -> bool:
+    err_str = str(err).lower()
+    large_keywords = ["file is too large", "file_too_large", "request entity too large", "413"]
+    return any(keyword in err_str for keyword in large_keywords)
+
+
 class DownloadService:
     def __init__(self, bot, api_client, artwork_service,
                  tagging_service, error_notifier, album_tracker, download_rate_limiter):
@@ -269,9 +275,9 @@ class DownloadService:
                                 duration=duration_sec,
                                 thumbnail=cover_bytes
                             )
-                    except telegram.error.BadRequest as e:
-                        if ("File is too large" in str(e) or "file_too_large" in str(e).lower()) and str(quality_value) == "320":
-                            logger.warning(f"File too large for 320kbps, retrying with 192kbps: {track.get('trackName')}")
+                    except Exception as e:
+                        if _is_file_too_large_error(e) and str(quality_value) == "320":
+                            logger.warning(f"File too large for 320kbps (error: {e}), retrying with 192kbps: {track.get('trackName')}")
                             status_msg = await self._update_status(chat_id, status_msg, "⚠️ *حجم فایل زیاد است، در حال تبدیل به ۱۹۲...*",
                                                                    status_prefix, is_batch, silent=silent)
 
