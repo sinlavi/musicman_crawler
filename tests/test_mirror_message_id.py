@@ -39,6 +39,24 @@ async def test_send_artwork_photo_uses_message_id():
 
 
 @pytest.mark.asyncio
+async def test_send_artwork_photo_cached_numeric_message_id_uses_copy_message():
+    mock_api = MagicMock()
+    service = ArtworkService(mock_api)
+    mock_bot = AsyncMock()
+    mock_msg = MagicMock()
+    mock_msg.message_id = 9988
+    mock_bot.copy_message.return_value = mock_msg
+
+    from core.config import TARGET_CHAT_ID
+    res = await service.send_artwork_photo(
+        mock_bot, 100, "9988", "Caption"
+    )
+
+    assert res == mock_msg
+    mock_bot.copy_message.assert_called_once_with(100, from_chat_id=TARGET_CHAT_ID, message_id=9988)
+
+
+@pytest.mark.asyncio
 async def test_preview_uses_message_id():
     mock_bot = AsyncMock()
     mock_msg = MagicMock()
@@ -67,3 +85,19 @@ async def test_preview_uses_message_id():
         mock_set_mirror.assert_called_once_with(
             "track", "999", "previewUrl", "https://api.telegram.org/file/bot<token>/778899"
         )
+
+
+@pytest.mark.asyncio
+async def test_preview_cached_numeric_message_id_uses_copy_message():
+    mock_bot = AsyncMock()
+
+    with patch("bot.handlers.preview.get_track", new_callable=AsyncMock) as mock_get_track, \
+         patch("bot.handlers.preview.get_cached_preview", new_callable=AsyncMock) as mock_get_cached:
+
+        mock_get_track.return_value = {"results": [{"trackName": "Test Track", "previewUrl": "http://example.com/p.mp3"}]}
+        mock_get_cached.return_value = "554411"
+
+        from core.config import TARGET_CHAT_ID
+        await send_voice_preview(mock_bot, 12345, 999, silent=True)
+
+        mock_bot.copy_message.assert_called_once_with(12345, from_chat_id=TARGET_CHAT_ID, message_id=554411)

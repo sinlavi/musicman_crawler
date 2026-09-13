@@ -99,14 +99,24 @@ class DownloadService:
                     await self.bot.send_chat_action(chat_id, "upload_voice")
                 logger.info(f"Sending cached audio: {track.get('trackName')} ({quality_value}kbps)")
 
-                await self.bot.send_audio(
-                    chat_id,
-                    audio=audio_cache,
-                    caption=caption,
-                    title=title,
-                    performer=performer,
-                    duration=duration_sec
-                )
+                sent = False
+                if str(audio_cache).isdigit() or (isinstance(audio_cache, str) and audio_cache.lstrip('-').isdigit()):
+                    try:
+                        from core.config import TARGET_CHAT_ID
+                        await self.bot.copy_message(chat_id, from_chat_id=TARGET_CHAT_ID, message_id=int(audio_cache))
+                        sent = True
+                    except Exception as copy_err:
+                        logger.warning(f"copy_message audio failed for {audio_cache}: {copy_err}, falling back to send_audio")
+
+                if not sent:
+                    await self.bot.send_audio(
+                        chat_id,
+                        audio=audio_cache,
+                        caption=caption,
+                        title=title,
+                        performer=performer,
+                        duration=duration_sec
+                    )
 
                 # Send 192kbps cached audio if track is longer than 8 minutes (480s)
                 if duration_sec is not None and duration_sec > 480 and str(quality_value) == "320":
@@ -114,14 +124,23 @@ class DownloadService:
                     if audio_192_cache:
                         try:
                             logger.info(f"Sending cached 192kbps audio for long track {track_id}")
-                            await self.bot.send_audio(
-                                chat_id,
-                                audio=audio_192_cache,
-                                caption=self._build_caption(track, "192"),
-                                title=title,
-                                performer=performer,
-                                duration=duration_sec
-                            )
+                            sent_192 = False
+                            if str(audio_192_cache).isdigit() or (isinstance(audio_192_cache, str) and audio_192_cache.lstrip('-').isdigit()):
+                                try:
+                                    from core.config import TARGET_CHAT_ID
+                                    await self.bot.copy_message(chat_id, from_chat_id=TARGET_CHAT_ID, message_id=int(audio_192_cache))
+                                    sent_192 = True
+                                except Exception as copy_err:
+                                    logger.warning(f"copy_message audio 192 failed: {copy_err}")
+                            if not sent_192:
+                                await self.bot.send_audio(
+                                    chat_id,
+                                    audio=audio_192_cache,
+                                    caption=self._build_caption(track, "192"),
+                                    title=title,
+                                    performer=performer,
+                                    duration=duration_sec
+                                )
                         except Exception as e_192:
                             logger.error(f"Failed to send 192kbps cached audio: {e_192}")
 
