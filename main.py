@@ -136,9 +136,13 @@ async def run_crawler():
     tagging_service = TaggingService()
     error_notifier = BaleUploadErrorNotifier(api_client)
 
-    request = None
-    if PROXY:
-        request = HTTPXRequest(proxy=PROXY)
+    request = HTTPXRequest(
+        proxy=PROXY if PROXY else None,
+        read_timeout=120.0,
+        write_timeout=120.0,
+        connect_timeout=60.0,
+        pool_timeout=60.0
+    )
 
     bot = Bot(token=TG_TOKEN, request=request)
 
