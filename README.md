@@ -13,7 +13,7 @@ An automated, high-performance distributed music crawler and Telegram delivery s
 
 ## ✨ Key Features
 
-- ⚡ **Distributed Sharding & Queue Polling:** Scalable multi-instance execution using deterministic modulo task distribution across runner instances.
+- ⚡ **Distributed Sharding & Instant Trigger Queue Polling:** Scalable multi-instance execution using deterministic modulo task distribution across runner instances (5 parallel runner nodes) with an HTTP webhook trigger endpoint for 0-latency crawl requests.
 - 🎨 **Rich Metadata & HD Artwork Tagging:** Automatically injects artist, album, title, release year, genre, and high-resolution album artwork into ID3/MP3 tags.
 - 🎙️ **Voice Preview Generation:** Extracts high-quality 30-second audio preview snippets formatted specifically for instant listening on Telegram.
 - 🔄 **Automatic Recovery & Rate Limiting:** Self-healing polling loop that automatically rescues stuck/interrupted downloads and prevents rate limiting via exponential backoff.
@@ -31,12 +31,12 @@ An automated, high-performance distributed music crawler and Telegram delivery s
                                   └─────────────┬─────────────┘
                                                 │ Queue Poll / API
                                                 ▼
-                   ┌────────────────────────────────────────────────────────┐
-                   │               MusicMan Distributed Crawlers            │
-                   ├───────────────────┬───────────────────┬────────────────┤
-                   │    Instance 1/3   │    Instance 2/3   │  Instance 3/3  │
-                   │ (download_id % 3) │ (download_id % 3) │(download_id % 3)│
-                   └─────────┬─────────┴─────────┬─────────┴────────┬───────┘
+                   ┌──────────────────────────────────────────────────────────────────────────────────┐
+                   │                          MusicMan Distributed Crawlers                           │
+                   ├──────────────┬──────────────┬──────────────┬──────────────┬──────────────────────┤
+                   │ Instance 1/5 │ Instance 2/5 │ Instance 3/5 │ Instance 4/5 │     Instance 5/5     │
+                   │(id % 5 == 0) │(id % 5 == 1) │(id % 5 == 2) │(id % 5 == 3) │    (id % 5 == 4)     │
+                   └──────┬───────┴──────┬───────┴──────┬───────┴──────┬───────┴──────────┬───────────┘
                              │                   │                  │
         ┌────────────────────┼───────────────────┼──────────────────┐
         ▼                    ▼                   ▼                  ▼

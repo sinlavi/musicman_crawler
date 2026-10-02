@@ -1,7 +1,10 @@
 import pytest
+import asyncio
+import aiohttp
 from crawlers.youtube import COMMON_OPTS, _build_opts
 from services.download_service import _is_file_too_large_error as is_large_download
 from services.direct_download_service import _is_file_too_large_error as is_large_direct
+from main import start_trigger_server, handle_trigger, new_task_event
 
 def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
@@ -12,10 +15,9 @@ def test_build_opts_includes_socket_timeout():
     assert "socket_timeout" in opts
     assert opts["socket_timeout"] == 20
 
-def test_sharding_numeric_and_string_ids():
-    total_instances = 3
-
-    test_ids = [101, "102", "item_xyz_123", 0, "456"]
+def test_sharding_numeric_and_string_ids_5_instances():
+    total_instances = 5
+    test_ids = [101, "102", "item_xyz_123", 0, "456", 1000, 1001, 1002, 1003, 1004]
 
     for download_id in test_ids:
         try:
@@ -41,9 +43,23 @@ def test_file_too_large_error_matching():
     assert is_large_download(other_err) is False
     assert is_large_direct(other_err) is False
 
+@pytest.mark.asyncio
+async def test_instant_trigger_server():
+    new_task_event.clear()
+    runner = await start_trigger_server(8089)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post("http://127.0.0.1:8089/trigger") as resp:
+                assert resp.status == 200
+                data = await resp.json()
+                assert data.get("success") is True
+                assert new_task_event.is_set()
+    finally:
+        await runner.cleanup()
+
 if __name__ == "__main__":
     test_common_opts_socket_timeout()
     test_build_opts_includes_socket_timeout()
-    test_sharding_numeric_and_string_ids()
+    test_sharding_numeric_and_string_ids_5_instances()
     test_file_too_large_error_matching()
     print("Sharding, options, and error matching tests passed!")

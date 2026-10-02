@@ -350,9 +350,9 @@ jobs:
           DB_CHANNEL_ID: ${{ secrets.DB_CHANNEL_ID }}
           INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
           INSTANCE_ID: 1
-          TOTAL_INSTANCES: 3
+          TOTAL_INSTANCES: 5
         run: |
-          echo "🚀 Starting bot (Instance 1/3)..."
+          echo "🚀 Starting bot (Instance 1/5)..."
           python main.py
       # ========== Restart workflow (on failure OR completion) ==========
       - name: Restart workflow
