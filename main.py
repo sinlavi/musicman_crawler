@@ -159,18 +159,13 @@ async def process_queue_item(bot, mm_bot, item, download_service, artwork_servic
                 await update_user_status(15, t_name, a_name)
 
                 # 4. Download and Send Audio
-                async def user_progress_callback(percent: int):
-                    await update_download_status(download_id, "downloading", percent=percent)
-                    await update_user_status(percent, t_name, a_name)
-
                 _, success, audio_msg = await download_service.download_and_send_track(
                     chat_id=TARGET_CHANNEL_ID,
                     track_id=track_id,
                     user_id=user_id,
                     selected_quality=quality,
                     silent=True,
-                    download_id=download_id,
-                    progress_callback=user_progress_callback
+                    download_id=download_id
                 )
 
                 if success:
