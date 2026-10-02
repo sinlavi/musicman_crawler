@@ -1,12 +1,10 @@
 import pytest
 import asyncio
 import aiohttp
-from unittest.mock import AsyncMock, patch
 from crawlers.youtube import COMMON_OPTS, _build_opts
 from services.download_service import _is_file_too_large_error as is_large_download
 from services.direct_download_service import _is_file_too_large_error as is_large_direct
 from main import start_trigger_server, handle_trigger, new_task_event
-from crawlers.itunes import save_telegram_file
 
 def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
@@ -58,30 +56,6 @@ async def test_instant_trigger_server():
                 assert new_task_event.is_set()
     finally:
         await runner.cleanup()
-
-@pytest.mark.asyncio
-async def test_save_telegram_file():
-    with patch("crawlers.itunes.fetch_itunes", new_callable=AsyncMock) as mock_fetch:
-        mock_fetch.return_value = {"success": True}
-        res = await save_telegram_file(
-            track_id="12345",
-            file_id="CQACAgQAAxkBAAI...",
-            message_id="9801",
-            quality="320",
-            filename="song.mp3"
-        )
-        assert res == {"success": True}
-        mock_fetch.assert_called_once_with(
-            "telegram/file/save",
-            method="POST",
-            payload={
-                "trackId": "12345",
-                "fileId": "CQACAgQAAxkBAAI...",
-                "messageId": "9801",
-                "quality": "320",
-                "filename": "song.mp3"
-            }
-        )
 
 if __name__ == "__main__":
     test_common_opts_socket_timeout()

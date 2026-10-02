@@ -262,16 +262,3 @@ async def update_download_status(download_id: int, status: str, error_message: s
 async def reset_stuck_downloads() -> Optional[Dict[str, Any]]:
     logger.info("Resetting stuck downloads (downloading -> pending)")
     return await fetch_itunes("download/update", method="POST", payload={"filterStatus": "downloading", "status": "pending"})
-
-
-async def save_telegram_file(track_id: Union[int, str], file_id: str, message_id: Union[int, str], quality: str = "320", filename: str = None) -> Optional[Dict[str, Any]]:
-    payload = {
-        "trackId": str(track_id),
-        "fileId": str(file_id),
-        "messageId": str(message_id),
-        "quality": str(quality)
-    }
-    if filename:
-        payload["filename"] = str(filename)
-    logger.info(f"Saving telegram file for track {track_id}: messageId={message_id}, fileId={file_id}, quality={quality}, filename={filename}")
-    return await fetch_itunes("telegram/file/save", method="POST", payload=payload)
