@@ -54,7 +54,7 @@ class DownloadService:
                                       is_batch=False, album_cover_bytes=None, collection_id=None,
                                       selected_quality=None, track_name_hint=None, track_index=None,
                                       status_prefix="", skip_size_check=True,
-                                      silent=False, download_id=None, progress_callback=None):
+                                      silent=False, download_id=None):
 
         # If no status_msg provided, use the first update to create it to avoid redundant send/delete
         if status_msg is None:
@@ -213,40 +213,18 @@ class DownloadService:
                     self.album_tracker.start_track(user_id, collection_id, track.get("trackName", ""))
 
                 if download_id:
-                    await update_download_status(download_id, "downloading", percent=30)
-                if progress_callback:
-                    try:
-                        res = progress_callback(30)
-                        if asyncio.iscoroutine(res): await res
-                    except Exception: pass
-
-                def on_yt_progress(yt_p):
-                    # Map yt-dlp 0..100% to pipeline 30..70%
-                    p = 30 + int(yt_p * 0.40)
-                    if progress_callback:
-                        try:
-                            res = progress_callback(p)
-                            if asyncio.iscoroutine(res):
-                                asyncio.create_task(res)
-                        except Exception as e:
-                            logger.debug(f"Error in progress_callback call: {e}")
-
+                    await update_download_status(download_id, "downloading", percent=40)
                 status_msg = await self._update_status(chat_id, status_msg,
                                                        f"⏳ *در حال دانلود با کیفیت {quality_value}kbps...*",
                                                        status_prefix, is_batch, silent=silent)
                 logger.info(f"Downloading from YouTube: {video_url} with quality {quality_value}")
                 await self.bot.send_chat_action(chat_id, "record_voice")
-                mp3_path = await download_audio(video_url, quality=quality_value, progress_callback=on_yt_progress)
+                mp3_path = await download_audio(video_url, quality=quality_value)
                 if not mp3_path: raise Exception("Download failed")
 
                 temp_dir = os.path.dirname(mp3_path)
                 if download_id:
                     await update_download_status(download_id, "downloading", percent=70)
-                if progress_callback:
-                    try:
-                        res = progress_callback(70)
-                        if asyncio.iscoroutine(res): await res
-                    except Exception: pass
                 lyrics_dict = await lyrics_service.get_lyrics(track_id, track.get("trackName", ""),
                                                               track.get("artistName", ""), track.get("collectionName"),
                                                               duration_ms=duration_ms)
@@ -258,11 +236,6 @@ class DownloadService:
 
                 if download_id:
                     await update_download_status(download_id, "downloading", percent=75)
-                if progress_callback:
-                    try:
-                        res = progress_callback(75)
-                        if asyncio.iscoroutine(res): await res
-                    except Exception: pass
                 status_msg = await self._update_status(chat_id, status_msg, "🏷️ *در حال تگ‌گذاری فایل...*",
                                                        status_prefix, is_batch, silent=silent)
                 lyrics_to_tag = (lyrics_dict.get("synced") or lyrics_dict.get("plain")) if lyrics_dict else None
@@ -270,11 +243,6 @@ class DownloadService:
 
                 if download_id:
                     await update_download_status(download_id, "downloading", percent=90)
-                if progress_callback:
-                    try:
-                        res = progress_callback(90)
-                        if asyncio.iscoroutine(res): await res
-                    except Exception: pass
                 status_msg = await self._update_status(chat_id, status_msg, "☁️ *در حال آپلود روی سرورهای ابری...*",
                                                        status_prefix, is_batch, silent=silent)
 

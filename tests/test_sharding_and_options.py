@@ -17,13 +17,10 @@ def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
     assert COMMON_OPTS["socket_timeout"] == 20
 
-def test_build_opts_includes_progress_hook():
-    dummy_hook = lambda d: None
-    opts = _build_opts(1, "/tmp", 128, use_proxy=False, progress_hook=dummy_hook)
+def test_build_opts_includes_socket_timeout():
+    opts = _build_opts(1, "/tmp", 128, use_proxy=False)
     assert "socket_timeout" in opts
     assert opts["socket_timeout"] == 20
-    assert "progress_hooks" in opts
-    assert dummy_hook in opts["progress_hooks"]
 
 def test_sharding_numeric_and_string_ids_5_instances():
     total_instances = 5
@@ -94,7 +91,7 @@ async def test_save_telegram_file():
 if __name__ == "__main__":
     test_format_progress_bar()
     test_common_opts_socket_timeout()
-    test_build_opts_includes_progress_hook()
+    test_build_opts_includes_socket_timeout()
     test_sharding_numeric_and_string_ids_5_instances()
     test_file_too_large_error_matching()
     print("Sharding, options, and error matching tests passed!")
