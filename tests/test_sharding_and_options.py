@@ -25,18 +25,27 @@ def test_build_opts_includes_progress_hook():
     assert "progress_hooks" in opts
     assert dummy_hook in opts["progress_hooks"]
 
-def test_sharding_numeric_and_string_ids_5_instances():
+def test_chunked_sharding_numeric_and_string_ids_5_instances():
     total_instances = 5
-    test_ids = [101, "102", "item_xyz_123", 0, "456", 1000, 1001, 1002, 1003, 1004]
+    chunk_size = 5
+    test_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
 
-    for download_id in test_ids:
+    expected_instances = [
+        1, 1, 1, 1, 1,
+        2, 2, 2, 2, 2,
+        3, 3, 3, 3, 3,
+        4, 4, 4, 4, 4,
+        5, 5, 5, 5, 5
+    ]
+
+    for download_id, expected_instance in zip(test_ids, expected_instances):
         try:
             numeric_id = int(download_id)
         except (ValueError, TypeError):
             numeric_id = abs(hash(str(download_id)))
 
-        assigned_instance = (numeric_id % total_instances) + 1
-        assert 1 <= assigned_instance <= total_instances
+        assigned_instance = ((numeric_id // chunk_size) % total_instances) + 1
+        assert assigned_instance == expected_instance
 
 def test_file_too_large_error_matching():
     errors = [
@@ -95,6 +104,6 @@ if __name__ == "__main__":
     test_format_progress_bar()
     test_common_opts_socket_timeout()
     test_build_opts_includes_progress_hook()
-    test_sharding_numeric_and_string_ids_5_instances()
+    test_chunked_sharding_numeric_and_string_ids_5_instances()
     test_file_too_large_error_matching()
     print("Sharding, options, and error matching tests passed!")
