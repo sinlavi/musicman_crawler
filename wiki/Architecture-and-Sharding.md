@@ -58,18 +58,16 @@ Given:
 
 A task is processed by an instance **if and only if**:
 
-$$((\text{download\_id} \mathbin{/\!/} \text{CHUNK\_SIZE}) \pmod{\text{TOTAL\_INSTANCES}}) + 1 == \text{INSTANCE\_ID}$$
-
-Where `CHUNK_SIZE = 5` by default.
+$$\text{download\_id} \pmod{\text{TOTAL\_INSTANCES}} == (\text{INSTANCE\_ID} - 1)$$
 
 ### Example
 
-For `TOTAL_INSTANCES = 5` and `CHUNK_SIZE = 5`:
-- **Instance 1** handles `download_id`s 0..4, 25..29, 50..54, etc.
-- **Instance 2** handles `download_id`s 5..9, 30..34, 55..59, etc.
-- **Instance 3** handles `download_id`s 10..14, 35..39, 60..64, etc.
-- **Instance 4** handles `download_id`s 15..19, 40..44, 65..69, etc.
-- **Instance 5** handles `download_id`s 20..24, 45..49, 70..74, etc.
+For `TOTAL_INSTANCES = 5`:
+- Instance 1 handles `download_id`s where $id \pmod 5 == 0$ (e.g., 0, 5, 10, 15...)
+- Instance 2 handles `download_id`s where $id \pmod 5 == 1$ (e.g., 1, 6, 11, 16...)
+- Instance 3 handles `download_id`s where $id \pmod 5 == 2$ (e.g., 2, 7, 12, 17...)
+- Instance 4 handles `download_id`s where $id \pmod 5 == 3$ (e.g., 3, 8, 13, 18...)
+- Instance 5 handles `download_id`s where $id \pmod 5 == 4$ (e.g., 4, 9, 14, 19...)
 
 ---
 
