@@ -1,4 +1,4 @@
-name: Test Deploy 3
+name: Test Deploy 4
 
 on:
   workflow_dispatch:
@@ -38,10 +38,8 @@ jobs:
           SKIPPED_COUNT=0
           RATE_LIMITED=0
 
-          # GitHub API endpoint for workflow runs
           API_URL="https://api.github.com/repos/$REPO/actions/runs"
 
-          # Get total count first
           TOTAL_RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "$API_URL?per_page=1" | jq -r '.total_count' 2>/dev/null)
@@ -49,7 +47,6 @@ jobs:
           echo "📊 Total workflow runs found: $TOTAL_RUNS"
           echo ""
 
-          # Function to delete with retry
           delete_run() {
             local RUN_ID=$1
             local MAX_RETRIES=3
@@ -65,7 +62,6 @@ jobs:
               if [ "$HTTP_STATUS" = "204" ]; then
                 return 0
               elif [ "$HTTP_STATUS" = "403" ]; then
-                # Check if it's rate limiting
                 REMAINING=$(curl -s -H "Authorization: token $GH_TOKEN" \
                   -H "Accept: application/vnd.github.v3+json" \
                   "https://api.github.com/rate_limit" | jq -r '.resources.actions.remaining')
@@ -91,16 +87,14 @@ jobs:
             return 3
           }
 
-          # Process runs in batches
           PAGE=1
-          while [ $PAGE -le 10 ]; do  # Limit to 10 pages (1000 runs) to avoid timeout
+          while [ $PAGE -le 10 ]; do
             echo "📥 Fetching page $PAGE..."
 
             RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "$API_URL?per_page=100&page=$PAGE&status=completed")
 
-            # Extract run IDs from response
             RUN_IDS=$(echo "$RESPONSE" | jq -r '.workflow_runs[]?.id' 2>/dev/null)
 
             if [ -z "$RUN_IDS" ] || [ "$RUN_IDS" = "null" ]; then
@@ -116,7 +110,6 @@ jobs:
                 continue
               fi
 
-              # Get run status
               RUN_STATUS=$(echo "$RESPONSE" | jq -r --arg id "$RUN_ID" '.workflow_runs[] | select(.id == ($id | tonumber)) | .status' 2>/dev/null)
 
               if [ "$RUN_STATUS" = "in_progress" ] || [ "$RUN_STATUS" = "queued" ]; then
@@ -150,14 +143,12 @@ jobs:
                   ;;
               esac
 
-              # Small delay to avoid rate limiting
               sleep 0.3
             done
 
             echo "📊 Page $PAGE completed: Deleted $BATCH_COUNT runs in this batch"
             echo ""
 
-            # Check rate limit status
             REMAINING=$(curl -s -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/rate_limit" | jq -r '.resources.actions.remaining')
@@ -169,7 +160,6 @@ jobs:
               sleep 30
             fi
 
-            # Check if there's a next page
             NEXT_PAGE=$(echo "$RESPONSE" | jq -r '.links.next' 2>/dev/null)
             if [ "$NEXT_PAGE" = "null" ] || [ -z "$NEXT_PAGE" ]; then
               break
@@ -186,19 +176,6 @@ jobs:
           echo "⚠️ Failed to delete: $FAILED_COUNT runs"
           echo "⏭️ Skipped: $SKIPPED_COUNT runs"
           echo "────────────────────────────────────────"
-          echo "💡 Note:"
-          echo "   - Failed runs may be protected or require admin permissions"
-          echo "   - Some runs might have been deleted by GitHub automatically"
-          echo "   - In-progress runs cannot be deleted"
-          echo "════════════════════════════════════════"
-
-          # Try one more time with different approach for failed runs if any
-          if [ $FAILED_COUNT -gt 0 ]; then
-            echo ""
-            echo "🔄 Attempting to delete failed runs with personal access token method..."
-            echo "⚠️ This step requires a personal access token with workflow scope"
-            echo "⚠️ Skipping due to token limitations..."
-          fi
   run-bot:
     needs: clear-history
     permissions:
@@ -349,10 +326,10 @@ jobs:
           OFFLINE_MODE: ${{ secrets.OFFLINE_MODE }}
           DB_CHANNEL_ID: ${{ secrets.DB_CHANNEL_ID }}
           INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
-          INSTANCE_ID: 3
+          INSTANCE_ID: 4
           TOTAL_INSTANCES: 5
         run: |
-          echo "🚀 Starting bot (Instance 3/5)..."
+          echo "🚀 Starting bot (Instance 4/5)..."
           python main.py
       # ========== Restart workflow (on failure OR completion) ==========
       - name: Restart workflow
@@ -361,5 +338,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🔄 Restarting workflow..."
-          gh workflow run "Test Deploy 3"
-  
+          gh workflow run "Test Deploy 4"

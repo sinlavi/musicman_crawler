@@ -10,6 +10,7 @@ from telegram import Bot
 from telegram.request import HTTPXRequest
 from core.logger import logger
 from core.http_client import HttpClient
+from aiohttp import web
 
 from utils.helpers import get_high_res_artwork
 from crawlers.utils import get_track
@@ -33,7 +34,8 @@ import time
 INSTANCE_ID = int(os.getenv("INSTANCE_ID", "1"))
 TOTAL_INSTANCES = int(os.getenv("TOTAL_INSTANCES", "1"))
 MAX_RUNTIME = int(os.getenv("MAX_RUNTIME", 5.5 * 3600)) # 5.5 hours default
-MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "10"))
+MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "15"))
+TRIGGER_PORT = int(os.getenv("TRIGGER_PORT", os.getenv("PORT", "8080")))
 START_TIME = time.time()
 
 # Target Chat ID from config
@@ -41,6 +43,30 @@ TARGET_CHANNEL_ID = TARGET_CHAT_ID
 
 # Lock to prevent concurrent artwork uploads for the same collection
 artwork_lock = asyncio.Lock()
+
+# Event to trigger instant queue polling upon receiving HTTP requests
+new_task_event = asyncio.Event()
+
+async def handle_trigger(request):
+    logger.info("Instant crawl trigger received via HTTP endpoint!")
+    new_task_event.set()
+    return web.json_response({"success": True, "message": "Crawler notified immediately"})
+
+async def start_trigger_server(port: int):
+    app = web.Application()
+    app.router.add_post("/trigger", handle_trigger)
+    app.router.add_get("/trigger", handle_trigger)
+    app.router.add_post("/webhook", handle_trigger)
+    app.router.add_get("/webhook", handle_trigger)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    try:
+        await site.start()
+        logger.info(f"Instant crawl trigger server running on port {port}")
+    except Exception as e:
+        logger.warning(f"Could not start trigger server on port {port}: {e}")
+    return runner
 
 async def process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event=None):
     download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
@@ -165,6 +191,8 @@ async def run_crawler():
         bot = Bot(token=TG_TOKEN, request=request)
         await bot.initialize()
 
+    trigger_runner = await start_trigger_server(TRIGGER_PORT)
+
     try:
         download_service = DownloadService(bot, api_client, artwork_service,
                                            tagging_service, error_notifier, album_tracker, download_rate_limiter)
@@ -195,10 +223,10 @@ async def run_crawler():
             available_slots = MAX_CONCURRENT_TASKS - len(active_tasks)
 
             if available_slots <= 0:
-                # Worker pool full, wait for any active task to finish
+                # Worker pool full, wait for any active task to finish or instant trigger
                 task_done_event.clear()
                 try:
-                    await asyncio.wait_for(task_done_event.wait(), timeout=2.0)
+                    await asyncio.wait_for(task_done_event.wait(), timeout=0.5)
                 except asyncio.TimeoutError:
                     pass
                 continue
@@ -215,22 +243,27 @@ async def run_crawler():
                     if consecutive_tech_errors >= 10:
                         logger.critical("Too many consecutive technical errors. Exiting for workflow restart...")
                         sys.exit(1)
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(5)
                     continue
 
                 # Reset error counter on any non-technical response
                 consecutive_tech_errors = 0
 
                 if not queue_resp.get("success") or not queue_resp.get("items"):
-                    logger.debug("No pending downloads found. Sleeping briefly...")
+                    logger.debug("No pending downloads found. Sleeping briefly or waiting for instant trigger...")
                     if active_tasks:
                         task_done_event.clear()
                         try:
-                            await asyncio.wait_for(task_done_event.wait(), timeout=3.0)
+                            await asyncio.wait_for(task_done_event.wait(), timeout=0.5)
                         except asyncio.TimeoutError:
                             pass
                     else:
-                        await asyncio.sleep(5)
+                        new_task_event.clear()
+                        try:
+                            await asyncio.wait_for(new_task_event.wait(), timeout=1.0)
+                            logger.info("Instantly awakened by crawl request trigger!")
+                        except asyncio.TimeoutError:
+                            pass
                     continue
 
                 items = queue_resp.get("items", [])
@@ -267,16 +300,23 @@ async def run_crawler():
                     if active_tasks:
                         task_done_event.clear()
                         try:
-                            await asyncio.wait_for(task_done_event.wait(), timeout=2.0)
+                            await asyncio.wait_for(task_done_event.wait(), timeout=0.5)
                         except asyncio.TimeoutError:
                             pass
                     else:
-                        await asyncio.sleep(5)
+                        new_task_event.clear()
+                        try:
+                            await asyncio.wait_for(new_task_event.wait(), timeout=1.0)
+                            logger.info("Instantly awakened by crawl request trigger!")
+                        except asyncio.TimeoutError:
+                            pass
 
             except Exception as e:
                 logger.exception(f"Crawler loop error: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
     finally:
+        if trigger_runner:
+            await trigger_runner.cleanup()
         await bot.shutdown()
 
 def signal_handler(sig, frame):

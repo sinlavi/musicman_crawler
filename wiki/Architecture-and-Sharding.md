@@ -13,20 +13,19 @@ This page details the underlying architecture, polling loop design, and distribu
                     └─────────────┬──────────────┘
                                   │ Poll Queue (/get_download_queue)
                                   ▼
-      ┌───────────────────────────┴───────────────────────────┐
-      │               Distributed Crawler Pool               │
-      │                                                       │
-      │  ┌─────────────────┐ ┌─────────────────┐ ┌───────────┴─────┐
-      │  │ Crawler Node #1 │ │ Crawler Node #2 │ │ Crawler Node #3 │
-      │  │ (INSTANCE_ID=1) │ │ (INSTANCE_ID=2) │ │ (INSTANCE_ID=3) │
-      │  └────────┬────────┘ └────────┬────────┘ └────────┬────────┘
-      └───────────┼───────────────────┼───────────────────┼─────────┘
-                  │                   │                   │
-                  ▼                   ▼                   ▼
-       ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-       │ Shard Task Filter│  │ Shard Task Filter│  │ Shard Task Filter│
-       │  (id % 3 == 0)   │  │  (id % 3 == 1)   │  │  (id % 3 == 2)   │
-       └──────────┬───────┘  └────────┬───────┘  └────────┬───────┘
+      ┌───────────────────────────────────────────────────────┴───────────────────────────────────────────────────────┐
+      │                                           Distributed Crawler Pool                                            │
+      │                                                                                                               │
+      │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                       │
+      │  │ Node #1 (1/5)│  │ Node #2 (2/5)│  │ Node #3 (3/5)│  │ Node #4 (4/5)│  │ Node #5 (5/5)│                       │
+      │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘                       │
+      └─────────┼─────────────────┼─────────────────┼─────────────────┼─────────────────┼───────────────────────────────┘
+                │                 │                 │                 │                 │
+                ▼                 ▼                 ▼                 ▼                 ▼
+       ┌────────────────┐┌────────────────┐┌────────────────┐┌────────────────┐┌────────────────┐
+       │ Shard Filter   ││ Shard Filter   ││ Shard Filter   ││ Shard Filter   ││ Shard Filter   │
+       │ (id % 5 == 0)  ││ (id % 5 == 1)  ││ (id % 5 == 2)  ││ (id % 5 == 3)  ││ (id % 5 == 4)  │
+       └───────┬────────┘└───────┬────────┘└───────┬────────┘└───────┬────────┘└───────┬────────┘
                   │                   │                   │
                   └───────────────────┼───────────────────┘
                                       ▼
@@ -63,10 +62,26 @@ $$\text{download\_id} \pmod{\text{TOTAL\_INSTANCES}} == (\text{INSTANCE\_ID} - 1
 
 ### Example
 
-For `TOTAL_INSTANCES = 3`:
-- Instance 1 handles `download_id`s where $id \pmod 3 == 0$ (e.g., 0, 3, 6, 9...)
-- Instance 2 handles `download_id`s where $id \pmod 3 == 1$ (e.g., 1, 4, 7, 10...)
-- Instance 3 handles `download_id`s where $id \pmod 3 == 2$ (e.g., 2, 5, 8, 11...)
+For `TOTAL_INSTANCES = 5`:
+- Instance 1 handles `download_id`s where $id \pmod 5 == 0$ (e.g., 0, 5, 10, 15...)
+- Instance 2 handles `download_id`s where $id \pmod 5 == 1$ (e.g., 1, 6, 11, 16...)
+- Instance 3 handles `download_id`s where $id \pmod 5 == 2$ (e.g., 2, 7, 12, 17...)
+- Instance 4 handles `download_id`s where $id \pmod 5 == 3$ (e.g., 3, 8, 13, 18...)
+- Instance 5 handles `download_id`s where $id \pmod 5 == 4$ (e.g., 4, 9, 14, 19...)
+
+---
+
+## 🚀 Instant Crawl Request Trigger Mechanism
+
+To support instant response times like Telegram Bots without relying solely on polling delays, each crawler runner hosts an embedded HTTP trigger listener listening on `TRIGGER_PORT` (default 8080 or `PORT`).
+
+When a user submits a new crawl or download request on the web platform, the server sends an HTTP `POST` or `GET` request to `/trigger` or `/webhook` on the crawler instances:
+
+```bash
+curl -X POST http://<crawler-host>:8080/trigger
+```
+
+Upon receiving this signal, the crawler instantly wakes up from idle sleep and queries the download queue immediately with **zero latency**.
 
 ---
 
