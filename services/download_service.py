@@ -12,7 +12,7 @@ from core.http_client import HttpClient
 from models.schemas import DownloadQuality
 from crawlers.utils import get_track, get_or_crawl_collection, get_or_crawl_collection_tracks
 from crawlers.youtube import search_youtube_track, download_audio
-from crawlers.itunes import get_cached_audio, set_mirror, get_cached_artwork, get_attachments, update_download_status
+from crawlers.itunes import get_cached_audio, set_mirror, get_cached_artwork, get_attachments, update_download_status, save_telegram_file
 from utils.audio_utils import convert_bitrate
 from utils.helpers import get_high_res_artwork, format_duration, generate_deep_link
 from utils.messages import send_message, edit_message, safe_delete
@@ -307,6 +307,17 @@ class DownloadService:
                         if not mirror_res or not mirror_res.get("success"):
                             logger.error(f"Failed to set mirror for track {track_id} quality {quality_value} after retries")
 
+                        file_id = msg.audio.file_id if msg.audio else None
+                        filename = msg.audio.file_name if msg.audio else os.path.basename(mp3_path)
+                        if file_id:
+                            await save_telegram_file(
+                                track_id=track_id,
+                                file_id=file_id,
+                                message_id=msg.message_id,
+                                quality=quality_value,
+                                filename=filename
+                            )
+
                 # DUAL UPLOAD: Only send 192kbps in addition for audios longer than 8 minutes (480s)
                 other_quality = "192" if str(quality_value) == "320" else "320"
                 is_longer_than_8_min = duration_sec is not None and duration_sec > 480
@@ -356,6 +367,17 @@ class DownloadService:
                                                                        quality=other_quality)
                                     if not mirror_conv_res or not mirror_conv_res.get("success"):
                                         logger.error(f"Failed to set mirror for converted track {track_id} quality {other_quality} after retries")
+
+                                    file_id_conv = msg_conv.audio.file_id if msg_conv.audio else None
+                                    filename_conv = msg_conv.audio.file_name if msg_conv.audio else os.path.basename(mp3_conv_path)
+                                    if file_id_conv:
+                                        await save_telegram_file(
+                                            track_id=track_id,
+                                            file_id=file_id_conv,
+                                            message_id=msg_conv.message_id,
+                                            quality=other_quality,
+                                            filename=filename_conv
+                                        )
                     except Exception as e:
                         logger.error(f"Failed to perform dual quality upload for {other_quality}kbps: {e}")
 
