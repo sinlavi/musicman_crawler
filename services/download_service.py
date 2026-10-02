@@ -70,7 +70,7 @@ class DownloadService:
         if not track_data or not track_data.get("results"):
             status_msg = await self._update_status(chat_id, status_msg, "خطا در دریافت اطلاعات آهنگ.", status_prefix,
                                                    is_batch, silent=silent)
-            return status_msg, False
+            return status_msg, False, None
 
         track = track_data["results"][0]
         track_id = track_id or track.get("trackId") or track.get("id")
@@ -155,7 +155,7 @@ class DownloadService:
                                                    track.get('artistName', ''), track.get('collectionName', ''),
                                                    0, 'cache', quality_value)
                 await self.error_notifier.check_and_clear_if_resolved(self.bot, test_success=True)
-                return status_msg, True
+                return status_msg, True, None
             except Exception as e:
                 logger.error(f"Cache send failed: {e}")
                 await self.error_notifier.notify_upload_error(self.bot, str(e))
@@ -203,7 +203,7 @@ class DownloadService:
             if not video_id:
                 status_msg = await self._update_status(chat_id, status_msg, "❌ منبعی برای ترک خواسته شده پیدا نشد.", status_prefix,
                                                        is_batch, silent=silent)
-                return status_msg, False
+                return status_msg, False, None
 
             video_url = f"https://music.youtube.com/watch?v={video_id}"
         temp_dir = None
@@ -388,13 +388,13 @@ class DownloadService:
                 self.download_rate_limiter.record_download(user_id, quality_value)
                 await self.error_notifier.check_and_clear_if_resolved(self.bot, test_success=True)
                 if not is_batch: await safe_delete(status_msg)
-                return status_msg, True
+                return status_msg, True, msg
         except Exception as e:
             logger.error(f"Download error: {e}")
             status_msg = await self._update_status(chat_id, status_msg, f"❌ خطا در دانلود {track.get('trackName', '')}",
                                                    status_prefix, is_batch, silent=silent)
             await self.error_notifier.notify_upload_error(self.bot, str(e))
-            return status_msg, False
+            return status_msg, False, None
         finally:
             if temp_dir: shutil.rmtree(temp_dir, ignore_errors=True)
 
