@@ -13,6 +13,7 @@ DEEP_LINK_BASE = f"https://ble.ir/{BOT_USERNAME.lstrip('@')}?start="
 # Connection Settings
 PROXY = os.getenv("proxy", "socks5h://127.0.0.1:1080")
 TG_TOKEN = os.getenv("TG_TOKEN")
+MM_BOT = os.getenv("MM_BOT")
 
 # Target Chat ID for sending messages
 TARGET_CHAT_ID = -1004499922541
