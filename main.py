@@ -33,7 +33,6 @@ import time
 # Environment variables for sharding and runtime control
 INSTANCE_ID = int(os.getenv("INSTANCE_ID", "1"))
 TOTAL_INSTANCES = int(os.getenv("TOTAL_INSTANCES", "1"))
-SHARD_CHUNK_SIZE = int(os.getenv("SHARD_CHUNK_SIZE", "5"))
 MAX_RUNTIME = int(os.getenv("MAX_RUNTIME", 5.5 * 3600)) # 5.5 hours default
 MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "15"))
 TRIGGER_PORT = int(os.getenv("TRIGGER_PORT", os.getenv("PORT", "8080")))
@@ -305,10 +304,8 @@ async def run_crawler():
                     except (ValueError, TypeError):
                         numeric_id = abs(hash(str(download_id)))
 
-                    # Chunked sharding logic: process items in chunks of SHARD_CHUNK_SIZE
-                    # e.g., items 0..4 go to instance 1, 5..9 to instance 2, ..., 20..24 to instance 5, 25..29 to instance 1, etc.
-                    assigned_instance = ((numeric_id // SHARD_CHUNK_SIZE) % TOTAL_INSTANCES) + 1
-                    if assigned_instance != INSTANCE_ID:
+                    # Sharding logic: only process items that belong to this instance
+                    if numeric_id % TOTAL_INSTANCES != (INSTANCE_ID - 1):
                         continue
 
                     if download_id in active_tasks:
