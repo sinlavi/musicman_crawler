@@ -486,6 +486,7 @@ async def download_audio(
         *,
         max_retries_per_method: int = 1,
         quality: int = 128,
+        progress_callback=None
 ) -> Optional[str]:
     """
     Download YouTube audio as MP3.
@@ -512,12 +513,33 @@ async def download_audio(
     async with METHOD_ORDER_LOCK:
         current_order = list(METHOD_ORDER)
 
+    last_reported_p = -1
+
+    def ytdlp_hook(d):
+        nonlocal last_reported_p
+        if not progress_callback:
+            return
+        status = d.get('status')
+        if status == 'downloading':
+            total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+            downloaded = d.get('downloaded_bytes') or 0
+            if total > 0:
+                p = int((downloaded / total) * 100)
+            else:
+                p = 0
+            if p != last_reported_p and p >= 0 and p <= 100:
+                last_reported_p = p
+                try:
+                    loop.call_soon_threadsafe(progress_callback, p)
+                except Exception as err:
+                    logger.debug(f"Error invoking progress_callback: {err}")
+
     for i, method in enumerate(current_order):
         for attempt in range(1, max_retries_per_method + 1):
             use_proxy = (i % 2 == 0) if PROXY else False
             logger.info("▶ Try Method %d (Attempt %d, Proxy: %s)", method, attempt, use_proxy)
             try:
-                opts = _build_opts(method, unique_dir, preferred_quality, use_proxy=use_proxy)
+                opts = _build_opts(method, unique_dir, preferred_quality, use_proxy=use_proxy, progress_hook=ytdlp_hook if progress_callback else None)
 
                 def run_ydl():
                     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -571,7 +593,7 @@ def _normalize_url(url: str) -> str:
     return url
 
 
-def _build_opts(method: int, output_dir: str, preferred_quality: int, use_proxy: bool = True) -> dict:
+def _build_opts(method: int, output_dir: str, preferred_quality: int, use_proxy: bool = True, progress_hook=None) -> dict:
     """
     Build yt‑dlp options dict for the given method number (1‑8).
     """
@@ -588,6 +610,9 @@ def _build_opts(method: int, output_dir: str, preferred_quality: int, use_proxy:
 
     AUDIO_POSTPROCESSOR['preferredquality'] = str(preferred_quality)
     opts["postprocessors"] = [AUDIO_POSTPROCESSOR]
+
+    if progress_hook:
+        opts["progress_hooks"] = [progress_hook]
 
     has_deno = _check_deno()
     opts["proxy"] = PROXY if use_proxy else None
