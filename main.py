@@ -1,4 +1,4 @@
-from core.config import TG_TOKEN, MM_BOT, INFO_CHANNEL_ID, OFFLINE_MODE, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY
+from core.config import TG_TOKEN, INFO_CHANNEL_ID, OFFLINE_MODE, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY
 import os
 
 # Set global proxy environment variables
@@ -68,49 +68,18 @@ async def start_trigger_server(port: int):
         logger.warning(f"Could not start trigger server on port {port}: {e}")
     return runner
 
-def format_progress_bar(percent: int) -> str:
-    filled = max(0, min(10, percent // 10))
-    empty = 10 - filled
-    return "▓" * filled + "░" * empty
-
-async def process_queue_item(bot, mm_bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event=None):
+async def process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event=None):
     download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
     track_id = item.get("trackId") or item.get("track_id") or item.get("id")
     quality = str(item.get("quality") or DEFAULT_QUALITY)
 
-    tg_user_id = item.get("telegramUserId") or item.get("telegram_user_id")
-    tg_msg_id = item.get("telegramMessageId") or item.get("telegram_message_id")
-
     logger.info(f"Processing download {download_id} for track {track_id} (quality: {quality})")
-
-    task_start_time = time.time()
-
-    async def update_user_status(percent: int, track_title="Music", artist_title="Artist"):
-        if not tg_user_id or not tg_msg_id:
-            return
-        bar = format_progress_bar(percent)
-        elapsed = int(time.time() - task_start_time)
-        text = (
-            f"🔍 Crawling & downloading\n\n"
-            f"🎵 {track_title}\n"
-            f"👤 {artist_title}\n\n"
-            f"{bar}  {percent}%\n\n"
-            f"⏱ Elapsed: {elapsed}s\n\n"
-            f"@musicman_official\n"
-            f"@musicman_official_bot"
-        )
-        try:
-            target_bot = mm_bot or bot
-            await target_bot.edit_message_text(chat_id=tg_user_id, message_id=int(tg_msg_id), text=text)
-        except Exception as err:
-            logger.debug(f"Failed to update user status message {tg_msg_id} for user {tg_user_id}: {err}")
 
     try:
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
             # Update status to downloading
             await update_download_status(download_id, "downloading", percent=0)
-            await update_user_status(0)
 
             # Process track with timeout (300 seconds / 5 minutes per attempt)
             async def _process_track():
@@ -120,11 +89,7 @@ async def process_queue_item(bot, mm_bot, item, download_service, artwork_servic
                     raise Exception("Track data not found")
 
                 track = track_data["results"][0]
-                t_name = track.get("trackName", "Music")
-                a_name = track.get("artistName", "Artist")
-
                 await update_download_status(download_id, "downloading", percent=5)
-                await update_user_status(5, t_name, a_name)
 
                 effective_track_id = track_id or track.get("trackId") or track.get("id")
 
@@ -156,10 +121,9 @@ async def process_queue_item(bot, mm_bot, item, download_service, artwork_servic
                 await asyncio.gather(_upload_artwork_task(), _upload_preview_task())
 
                 await update_download_status(download_id, "downloading", percent=15)
-                await update_user_status(15, t_name, a_name)
 
                 # 4. Download and Send Audio
-                _, success, audio_msg = await download_service.download_and_send_track(
+                _, success = await download_service.download_and_send_track(
                     chat_id=TARGET_CHANNEL_ID,
                     track_id=track_id,
                     user_id=user_id,
@@ -171,22 +135,6 @@ async def process_queue_item(bot, mm_bot, item, download_service, artwork_servic
                 if success:
                     logger.info(f"Successfully processed download {download_id} on attempt {attempt}")
                     await update_download_status(download_id, "completed", percent=100)
-                    await update_user_status(100, t_name, a_name)
-
-                    # Delete progress message and copy audio to user
-                    if tg_user_id and tg_msg_id:
-                        target_bot = mm_bot or bot
-                        try:
-                            await target_bot.delete_message(chat_id=tg_user_id, message_id=int(tg_msg_id))
-                        except Exception as del_err:
-                            logger.warning(f"Could not delete status message {tg_msg_id} for user {tg_user_id}: {del_err}")
-
-                        if audio_msg:
-                            try:
-                                await target_bot.copy_message(chat_id=tg_user_id, from_chat_id=TARGET_CHANNEL_ID, message_id=audio_msg.message_id)
-                                logger.info(f"Successfully copied audio message {audio_msg.message_id} to user {tg_user_id}")
-                            except Exception as copy_err:
-                                logger.error(f"Could not copy audio message to user {tg_user_id}: {copy_err}")
                     return True
                 else:
                     raise Exception("Download or upload failed")
@@ -242,17 +190,6 @@ async def run_crawler():
         )
         bot = Bot(token=TG_TOKEN, request=request)
         await bot.initialize()
-
-    # Secondary bot instance for user status updates using MM_BOT secret token
-    mm_bot = None
-    if MM_BOT:
-        try:
-            mm_bot = Bot(token=MM_BOT, request=request)
-            await mm_bot.initialize()
-            logger.info("MM_BOT user interface bot initialized successfully.")
-        except Exception as e:
-            logger.warning(f"MM_BOT initialization failed ({e}), falling back to primary TG_TOKEN bot.")
-            mm_bot = bot
 
     trigger_runner = await start_trigger_server(TRIGGER_PORT)
 
@@ -356,7 +293,7 @@ async def run_crawler():
                     active_tasks.add(download_id)
                     tasks_started += 1
                     asyncio.create_task(
-                        process_queue_item(bot, mm_bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event)
+                        process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event)
                     )
 
                 if tasks_started == 0:
@@ -380,9 +317,6 @@ async def run_crawler():
     finally:
         if trigger_runner:
             await trigger_runner.cleanup()
-        if mm_bot and mm_bot != bot:
-            try: await mm_bot.shutdown()
-            except Exception: pass
         await bot.shutdown()
 
 def signal_handler(sig, frame):
