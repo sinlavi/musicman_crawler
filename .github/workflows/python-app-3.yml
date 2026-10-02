@@ -346,7 +346,6 @@ jobs:
         id: bot
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          MM_BOT: ${{ secrets.MM_BOT }}
           OFFLINE_MODE: ${{ secrets.OFFLINE_MODE }}
           DB_CHANNEL_ID: ${{ secrets.DB_CHANNEL_ID }}
           INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
