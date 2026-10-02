@@ -5,13 +5,8 @@ from unittest.mock import AsyncMock, patch
 from crawlers.youtube import COMMON_OPTS, _build_opts
 from services.download_service import _is_file_too_large_error as is_large_download
 from services.direct_download_service import _is_file_too_large_error as is_large_direct
-from main import start_trigger_server, handle_trigger, new_task_event, format_progress_bar
+from main import start_trigger_server, handle_trigger, new_task_event
 from crawlers.itunes import save_telegram_file
-
-def test_format_progress_bar():
-    assert format_progress_bar(0) == "░░░░░░░░░░"
-    assert format_progress_bar(40) == "▓▓▓▓░░░░░░"
-    assert format_progress_bar(100) == "▓▓▓▓▓▓▓▓▓▓"
 
 def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
@@ -89,7 +84,6 @@ async def test_save_telegram_file():
         )
 
 if __name__ == "__main__":
-    test_format_progress_bar()
     test_common_opts_socket_timeout()
     test_build_opts_includes_socket_timeout()
     test_sharding_numeric_and_string_ids_5_instances()
