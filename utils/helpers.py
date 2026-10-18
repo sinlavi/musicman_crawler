@@ -1,7 +1,4 @@
 import hashlib
-import time
-from core.config import DEEP_LINK_BASE
-from typing import Any
 
 def format_duration(milliseconds):
     """Convert milliseconds to MM:SS format"""
@@ -33,6 +30,6 @@ def generate_search_hash(search_type: str, search_term: str) -> str:
     combined = f"{search_type}:{search_term}".lower()
     return hashlib.md5(combined.encode()).hexdigest()
 
-def generate_deep_link(type_: str, item_id: Any) -> str:
-    """Generate a deep link for a bot entity"""
-    return f"{DEEP_LINK_BASE}{type_}_{item_id}"
+
+__all__ = ["format_duration", "get_high_res_artwork", "generate_search_hash"]
+

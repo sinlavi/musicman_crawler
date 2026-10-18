@@ -8,7 +8,6 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 from services.download_service import DownloadService
-from services.direct_download_service import DirectDownloadService
 
 class TestDualUploadCondition(unittest.TestCase):
 
@@ -51,7 +50,7 @@ class TestCacheHitDualUpload(unittest.IsolatedAsyncioTestCase):
 
     async def test_cache_hit_dual_upload_condition_long_track(self):
         bot = AsyncMock()
-        service = DownloadService(bot, AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock())
+        service = DownloadService(bot, AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock())
 
         # Mock get_track and get_cached_audio
         track_data = {"results": [{"trackId": 123, "trackName": "Long Song", "artistName": "Artist", "trackTimeMillis": 600000}]}
@@ -69,10 +68,11 @@ class TestCacheHitDualUpload(unittest.IsolatedAsyncioTestCase):
             second_call_audio = bot.send_audio.call_args_list[1].kwargs['audio']
             self.assertEqual(first_call_audio, "file_320_id")
             self.assertEqual(second_call_audio, "file_192_id")
+            self.assertNotIn('caption', bot.send_audio.call_args_list[0].kwargs)
 
     async def test_cache_hit_dual_upload_condition_short_track(self):
         bot = AsyncMock()
-        service = DownloadService(bot, AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock())
+        service = DownloadService(bot, AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock())
 
         track_data = {"results": [{"trackId": 124, "trackName": "Short Song", "artistName": "Artist", "trackTimeMillis": 200000}]}
 

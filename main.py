@@ -1,4 +1,4 @@
-from core.config import TG_TOKEN, INFO_CHANNEL_ID, OFFLINE_MODE, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY
+from core.config import BALE_TOKEN, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY
 import os
 
 # Set global proxy environment variables
@@ -6,23 +6,15 @@ if PROXY:
     os.environ["HTTP_PROXY"] = PROXY
     os.environ["HTTPS_PROXY"] = PROXY
 
-from telegram import Bot
-from telegram.request import HTTPXRequest
 from core.logger import logger
 from core.http_client import HttpClient
 
-from utils.helpers import get_high_res_artwork
-from crawlers.utils import get_track
-from bot.handlers.preview import send_voice_preview
 from services.api_client import APIClient
 from services.artwork_service import ArtworkService
-from services.rate_limiter import DownloadRateLimiter
-from services.tracker import AlbumDownloadTracker
 from services.tagging_service import TaggingService
 from services.error_notifier import BaleUploadErrorNotifier
 from services.download_service import DownloadService
-from services.lyrics_service import lyrics_service
-from crawlers.itunes import get_download_queue, update_download_status, reset_stuck_downloads, set_mirror
+from crawlers.itunes import get_download_queue, update_download_status, reset_stuck_downloads
 
 import asyncio
 import signal
@@ -39,10 +31,7 @@ START_TIME = time.time()
 # Target Chat ID from config
 TARGET_CHANNEL_ID = TARGET_CHAT_ID
 
-# Lock to prevent concurrent artwork uploads for the same collection
-artwork_lock = asyncio.Lock()
-
-async def process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event=None):
+async def process_queue_item(bot, item, download_service, user_id, active_tasks, task_done_event=None):
     download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
     track_id = item.get("trackId") or item.get("track_id") or item.get("id")
     quality = str(item.get("quality") or DEFAULT_QUALITY)
@@ -57,46 +46,11 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
 
             # Process track with timeout (300 seconds / 5 minutes per attempt)
             async def _process_track():
-                # 1. Fetch metadata
-                track_data = await get_track(track_id)
-                if not track_data or not track_data.get("results"):
-                    raise Exception("Track data not found")
-
-                track = track_data["results"][0]
                 await update_download_status(download_id, "downloading", percent=5)
-
-                effective_track_id = track_id or track.get("trackId") or track.get("id")
-
-                # 2 & 3. Process Artwork & Voice Preview concurrently
-                async def _upload_artwork_task():
-                    artwork_url = get_high_res_artwork(track.get("artworkUrl100"), 400)
-                    if artwork_url:
-                        coll_id = track.get("collectionId") or effective_track_id
-                        # Use lock to prevent duplicate concurrent uploads for the same collection
-                        async with artwork_lock:
-                            if not await artwork_service.get_cached_artwork_url("collection", coll_id):
-                                artwork_bytes = await artwork_service.get_artwork_for_display("collection", coll_id, artwork_url, user_id)
-                                if artwork_bytes:
-                                    caption = f"🖼 *کاور آهنگ:* {track.get('trackName')} - {track.get('artistName')}"
-                                    photo_msg = await bot.send_photo(TARGET_CHANNEL_ID, photo=artwork_bytes, caption=caption)
-                                    if photo_msg:
-                                        message_id = photo_msg.message_id
-                                        mirror_url = f"https://api.telegram.org/file/bot<token>/{message_id}"
-                                        if coll_id:
-                                            await set_mirror("collection", str(coll_id), "artworkUrl", mirror_url)
-                                        if effective_track_id:
-                                            await set_mirror("track", str(effective_track_id), "artworkUrl", mirror_url)
-
-                async def _upload_preview_task():
-                    if track.get("previewUrl") and effective_track_id:
-                        await send_voice_preview(bot, TARGET_CHANNEL_ID, effective_track_id, user_id, silent=True)
-
-                # Parallelize I/O bound tasks (artwork processing/mirroring and voice preview upload)
-                await asyncio.gather(_upload_artwork_task(), _upload_preview_task())
 
                 await update_download_status(download_id, "downloading", percent=15)
 
-                # 4. Download and Send Audio
+                # Download and send the tagged audio file
                 _, success = await download_service.download_and_send_track(
                     chat_id=TARGET_CHANNEL_ID,
                     track_id=track_id,
@@ -132,42 +86,19 @@ async def process_queue_item(bot, item, download_service, artwork_service, user_
 
 
 async def run_crawler():
+    from balethon import Client
+
     # Initialize Services
     api_client = APIClient(API_BASE_URL, API_TOKEN)
-    artwork_service = ArtworkService(api_client, None) # Passed None for user_settings_service
-    download_rate_limiter = DownloadRateLimiter()
-    album_tracker = AlbumDownloadTracker(api_client)
+    artwork_service = ArtworkService()
     tagging_service = TaggingService()
     error_notifier = BaleUploadErrorNotifier(api_client)
 
-    request = HTTPXRequest(
-        proxy=PROXY if PROXY else None,
-        read_timeout=120.0,
-        write_timeout=120.0,
-        connect_timeout=60.0,
-        pool_timeout=60.0
-    )
-
-    bot = Bot(token=TG_TOKEN, request=request)
-
-    # Initialize bot with fallback to direct connection if proxy fails
-    try:
-        await bot.initialize()
-    except Exception as e:
-        logger.warning(f"Bot initialization with proxy ({PROXY}) failed ({e}). Falling back to direct connection...")
-        request = HTTPXRequest(
-            proxy=None,
-            read_timeout=120.0,
-            write_timeout=120.0,
-            connect_timeout=60.0,
-            pool_timeout=60.0
-        )
-        bot = Bot(token=TG_TOKEN, request=request)
-        await bot.initialize()
+    bot = Client(token=BALE_TOKEN, proxy=PROXY or None)
+    await bot.connect()
 
     try:
-        download_service = DownloadService(bot, api_client, artwork_service,
-                                           tagging_service, error_notifier, album_tracker, download_rate_limiter)
+        download_service = DownloadService(bot, api_client, artwork_service, tagging_service, error_notifier)
 
         logger.info(f"ABRAAVA Crawler Instance {INSTANCE_ID}/{TOTAL_INSTANCES} initialized with max concurrent tasks {MAX_CONCURRENT_TASKS}...")
 
@@ -260,7 +191,7 @@ async def run_crawler():
                     active_tasks.add(download_id)
                     tasks_started += 1
                     asyncio.create_task(
-                        process_queue_item(bot, item, download_service, artwork_service, user_id, active_tasks, task_done_event)
+                        process_queue_item(bot, item, download_service, user_id, active_tasks, task_done_event)
                     )
 
                 if tasks_started == 0:
@@ -277,7 +208,7 @@ async def run_crawler():
                 logger.exception(f"Crawler loop error: {e}")
                 await asyncio.sleep(5)
     finally:
-        await bot.shutdown()
+        await bot.disconnect()
 
 def signal_handler(sig, frame):
     sys.exit(0)

@@ -1,4 +1,4 @@
-python-telegram-bot
+balethon
 ytmusicapi
 yt_dlp
 aiosqlite
@@ -9,7 +9,6 @@ PySocks
 mutagen
 dotenv
 rapidfuzz
-spotipy
 pillow
 beautifulsoup4
 static-ffmpeg
