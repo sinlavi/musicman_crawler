@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active-brightgreen.svg?style=for-the-badge)](https://mm.3rah.ir)
 
-An automated, high-performance distributed music crawler and Telegram delivery service. **MusicMan** seamlessly processes music download queues, fetches tracks from iTunes and YouTube Music, enriches audio with high-resolution artwork and accurate ID3 tags, generates audio voice previews, and delivers content directly to target Telegram channels and users.
+An automated music crawler and Bale Messenger delivery service. **MusicMan** processes the backend download queue, gets track metadata and artwork from iTunes, downloads audio from YouTube, adds LRCLIB or YouTube Music lyrics, tags the MP3, and sends the resulting file through Bale.
 
 🌐 **Project Main Instance:** [**https://mm.3rah.ir**](https://mm.3rah.ir)
 
@@ -15,7 +15,8 @@ An automated, high-performance distributed music crawler and Telegram delivery s
 
 - ⚡ **Distributed Sharding & Queue Polling:** Scalable multi-instance execution using deterministic modulo task distribution across runner instances.
 - 🎨 **Rich Metadata & HD Artwork Tagging:** Automatically injects artist, album, title, release year, genre, and high-resolution album artwork into ID3/MP3 tags.
-- 🎙️ **Voice Preview Generation:** Extracts high-quality 30-second audio preview snippets formatted specifically for instant listening on Telegram.
+- 🎼 **Lyrics:** Uses LRCLIB first and YouTube Music when LRCLIB has no lyrics.
+- 📤 **Bale Delivery:** Uploads the tagged audio file without a message caption; long tracks retain the additional 192 kbps upload.
 - 🔄 **Automatic Recovery & Rate Limiting:** Self-healing polling loop that automatically rescues stuck/interrupted downloads and prevents rate limiting via exponential backoff.
 - 🌐 **Cloudflare WARP Proxy Support:** Built-in proxy routing (SOCKS5/HTTP) for bypassing geo-restrictions and network rate limits.
 - 📝 **Lyrics Integration:** Synchronized and plain text lyrics retrieval and tagging for enhanced user experience.
@@ -41,7 +42,7 @@ An automated, high-performance distributed music crawler and Telegram delivery s
         ┌────────────────────┼───────────────────┼──────────────────┐
         ▼                    ▼                   ▼                  ▼
  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
- │ iTunes API   │    │ YouTube DL   │    │ Tagging & HD │    │ Telegram Bot │
+ │ iTunes API   │    │ YouTube DL   │    │ Tagging & HD │    │ Bale Messenger │
  │ Metadata     │    │ Engine       │    │ Artwork      │    │ Delivery     │
  └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
 ```
@@ -51,14 +52,11 @@ An automated, high-performance distributed music crawler and Telegram delivery s
 ## 📁 Repository Structure
 
 ```
-├── bot/                # Telegram bot handlers & preview delivery
 ├── core/               # Configuration, HTTP client, & logger modules
 ├── crawlers/           # iTunes, YouTube, and crawler utility engines
-├── docs/               # GitHub Pages website documentation
 ├── models/             # Data models and structures
 ├── services/           # Artwork, download, tagging, lyrics, and rate-limiting services
 ├── tests/              # Unit and integration tests
-├── wiki/               # Project documentation wiki
 ├── main.py             # Application entry point and distributed runner loop
 ├── pyproject.toml      # Project configurations & tool settings
 └── requirements.txt    # Python dependencies
@@ -94,10 +92,10 @@ pip install -r requirements.txt
 Create a `.env` file in the root directory:
 
 ```env
-# Telegram Bot Configuration
-TG_TOKEN=your_telegram_bot_token
-DB_CHANNEL_ID=-100xxxxxxxxxx
-INFO_CHANNEL_ID=5524168471
+# Bale Messenger Configuration
+BALE_TOKEN=your_bale_bot_token
+TARGET_CHAT_ID=6053683389
+INFO_CHANNEL_ID=your_bale_status_chat_id
 
 # API & Instance Settings
 API_BASE_URL=https://musicman.gt.tc/users/index.php
@@ -124,19 +122,6 @@ python main.py
 ```bash
 PYTHONPATH=. python -m pytest
 ```
-
----
-
-## 📚 Documentation & Wiki
-
-Explore detailed documentation in our [Wiki Directory](./wiki/):
-
-- 📖 [Home & Overview](./wiki/Home.md)
-- ⚙️ [Architecture & Sharding](./wiki/Architecture-and-Sharding.md)
-- 🔧 [Configuration & Environment Reference](./wiki/Configuration-and-Environment.md)
-- 🎧 [Services & Crawlers](./wiki/Services-and-Crawlers.md)
-- 🚀 [Deployment & GitHub Actions CI](./wiki/Deployment-and-CI.md)
-- ❓ [Troubleshooting & FAQ](./wiki/Troubleshooting-and-FAQ.md)
 
 ---
 

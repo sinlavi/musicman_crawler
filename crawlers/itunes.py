@@ -7,10 +7,9 @@ from typing import Optional, Dict, Any, Literal, List, Union, Tuple
 from pathlib import Path
 import aiosqlite
 
-from core.config import ITUNES_BASE_URL, OFFLINE_MODE, PROXY, FOOTER, API_TOKEN
+from core.config import ITUNES_BASE_URL, OFFLINE_MODE, PROXY, API_TOKEN
 from core.logger import logger
 from core.http_client import HttpClient
-from utils.messages import edit_message
 
 
 class iTunesSQLiteCache:
@@ -149,9 +148,11 @@ async def lookup_itunes(id: Union[int, str], entity: Optional[str] = None, bypas
 
 
 async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str, mirror_url: str,
-                     quality: str = None, max_retries: int = 5) -> Optional[Dict[str, Any]]:
+                     quality: str = None, max_retries: int = 5,
+                     source: str = None) -> Optional[Dict[str, Any]]:
     payload = {"entityType": entity_type, "entityId": str(entity_id), "urlType": url_type, "mirrorUrl": mirror_url}
     if quality: payload["quality"] = quality
+    if source: payload["source"] = source
     logger.info(f"Setting mirror: {entity_type} {entity_id} {url_type} -> {mirror_url} ({quality})")
 
     for attempt in range(1, max_retries + 1):
@@ -172,13 +173,6 @@ async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str
     return None
 
 
-def extract_file_id(url: Optional[str]) -> Optional[str]:
-    if not url: return None
-    if 'bot<token>/' in url:
-        return url.split('bot<token>/')[-1]
-    return url
-
-
 async def get_attachments(entity_type: str, entity_id: Union[int, str], quality: str = None) -> Optional[
     Dict[str, Any]]:
     logger.info(f"Fetching attachments for {entity_type} {entity_id} ({quality})")
@@ -194,54 +188,14 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None) -> Op
     attachments = await get_attachments('track', track_id, quality=quality or "192")
     if attachments and attachments.get('audioUrls'):
         for audio in attachments['audioUrls']:
-            if str(audio.get('quality')) == str(quality or "192"):
+            if (str(audio.get('quality')) == str(quality or "192")
+                    and str(audio.get('source', '')).lower() == "bale"):
                 url = audio.get('url')
                 if url:
                     logger.info(f"Cached audio found for {track_id}: {url}")
-                    return extract_file_id(url)
+                    return url
     logger.info(f"No cached audio for {track_id} with quality {quality or '192'}")
     return None
-
-
-async def get_cached_artwork(entity_type: str, entity_id: Union[int, str]) -> Optional[str]:
-    attachments = await get_attachments(entity_type, entity_id)
-    if attachments and attachments.get('artworkUrls'):
-        # Just return the first mirror artwork if available
-        for art in attachments['artworkUrls']:
-            url = art.get('url') if isinstance(art, dict) else art
-            if url:
-                url = url.replace('30x30', '600x600')
-                logger.info(f"Artwork url found: {url}")
-                return url
-    return None
-
-
-async def get_cached_preview(track_id: Union[int, str]) -> Optional[str]:
-    attachments = await get_attachments('track', track_id)
-    if attachments and attachments.get('previewUrls'):
-        for preview in attachments['previewUrls']:
-            if preview.get('source') != 'itunes':
-                return extract_file_id(preview.get('url'))
-    return None
-
-
-async def get_lyrics(track_id: Union[int, str]) -> Optional[Dict[str, Any]]:
-    logger.info(f"Checking lyrics for {track_id}")
-    data = await fetch_itunes("lyrics/get", params={"id": str(track_id)})
-    if data and data.get("success") and "lyrics" in data:
-        return data["lyrics"]
-    return None
-
-
-async def set_lyrics(track_id: Union[int, str], lyrics: Dict[str, Any], lyrics_type: str = "unsynced") -> Optional[Dict[str, Any]]:
-    logger.info(f"Setting lyrics for {track_id} (Type: {lyrics_type})")
-    return await fetch_itunes("lyrics/save", method="POST", payload={"id": str(track_id), "lyrics": lyrics, "type": lyrics_type})
-
-
-async def save_metadata(entity_type: str, data: Union[Dict, List]) -> Optional[Dict[str, Any]]:
-    endpoint = f"{entity_type}/save"
-    logger.info(f"Syncing {entity_type} metadata to 3rah API")
-    return await fetch_itunes(endpoint, method="POST", payload=data)
 
 
 async def get_download_queue(status: str = "pending", limit: int = 60) -> Optional[Dict[str, Any]]:

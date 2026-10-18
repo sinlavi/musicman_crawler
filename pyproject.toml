@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "musicman-crawler"
 version = "1.0.0"
-description = "High-performance distributed music crawler and Telegram bot service"
+description = "Music crawler and Bale Messenger delivery service"
 readme = "README.md"
 requires-python = ">=3.10"
 
