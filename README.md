@@ -129,6 +129,8 @@ Optional:
 - `PROXY`: proxy URL for messenger/API/YouTube traffic.
 - `OFFLINE_MODE`: set to `True` only for local offline testing.
 - `API_TOKEN`: API authentication token, if enabled by the server.
+- `LRCLIB_APP_ID`: registered LRCLIB application ID, if available.
+- `LRCLIB_API_KEY`: registered LRCLIB server API key, if available.
 
 The Telegram bot must be an administrator of the target channel/group with permission
 to post audio. GitHub repository secrets are configured under **Settings → Secrets and

@@ -6,6 +6,7 @@ import sys
 # Mock YTMusic before importing LyricsService to avoid ConnectionError in __init__
 sys.modules['ytmusicapi'] = MagicMock()
 
+import services.lyrics_service as lyrics_module
 from services.lyrics_service import LyricsService
 from core.http_client import HttpClient
 
@@ -37,6 +38,23 @@ class TestLyricsPlaceholder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_request.call_count, 2)
         self.assertFalse(mock_request.call_args_list[0].kwargs["use_proxy"])
         self.assertTrue(mock_request.call_args_list[1].kwargs["use_proxy"])
+
+    @patch.object(HttpClient, 'request_with_methods')
+    async def test_lrclib_sends_registered_client_headers(self, mock_request):
+        mock_request.return_value = (
+            {"plainLyrics": "lyrics", "syncedLyrics": None}, 200, False)
+
+        with patch.object(lyrics_module, "LRCLIB_APP_ID", "app-id"), \
+                patch.object(lyrics_module, "LRCLIB_API_KEY", "api-key"):
+            ls = LyricsService()
+            lyrics = await ls._fetch_from_lrclib("title", "artist")
+
+        self.assertEqual(lyrics["plain"], "lyrics")
+        headers = mock_request.call_args.kwargs["headers"]
+        self.assertEqual(headers, {
+            "Lrclib-App-Id": "app-id",
+            "Lrclib-Api-Key": "api-key",
+        })
 
 if __name__ == '__main__':
     unittest.main()

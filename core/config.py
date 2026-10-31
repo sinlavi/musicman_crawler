@@ -19,6 +19,8 @@ INFO_CHANNEL_ID = os.getenv("INFO_CHANNEL_ID")
 ITUNES_BASE_URL = os.getenv("ITUNES_BASE_URL", "https://mm.3rah.ir/api")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://mm.3rah.ir/api")
 API_TOKEN = os.getenv("API_TOKEN", "change_me_to_a_secure_token")
+LRCLIB_APP_ID = os.getenv("LRCLIB_APP_ID")
+LRCLIB_API_KEY = os.getenv("LRCLIB_API_KEY")
 
 # Bot Behavior
 OFFLINE_MODE = os.getenv("OFFLINE_MODE", "False").lower() == "true"

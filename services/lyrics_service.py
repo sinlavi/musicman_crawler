@@ -1,7 +1,7 @@
 import asyncio
 import random
 from ytmusicapi import YTMusic
-from core.config import PROXY
+from core.config import LRCLIB_API_KEY, LRCLIB_APP_ID, PROXY
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -75,14 +75,19 @@ class LyricsService:
             from core.http_client import HttpClient
 
             async def lrclib_request(url, request_params):
+                headers = {}
+                if LRCLIB_APP_ID:
+                    headers["Lrclib-App-Id"] = LRCLIB_APP_ID
+                if LRCLIB_API_KEY:
+                    headers["Lrclib-Api-Key"] = LRCLIB_API_KEY
                 data, status, technical_error = await HttpClient.request_with_methods(
-                    "GET", url, use_proxy=False, params=request_params)
+                    "GET", url, use_proxy=False, params=request_params, headers=headers)
                 if technical_error or status >= 500:
                     logger.warning(
                         "LRCLIB direct request failed (status %s); retrying with proxy",
                         status)
                     return await HttpClient.request_with_methods(
-                        "GET", url, use_proxy=True, params=request_params)
+                        "GET", url, use_proxy=True, params=request_params, headers=headers)
                 return data, status, technical_error
 
             # 1. Try exact match with duration (best for accuracy)
