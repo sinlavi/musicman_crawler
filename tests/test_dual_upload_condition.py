@@ -7,7 +7,23 @@ import pytest
 import unittest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
-from services.download_service import DownloadService
+from services.download_service import DownloadService, _bale_upload_ids
+
+
+class TestBaleUploadResponse(unittest.TestCase):
+
+    def test_extracts_ids_from_bale_message(self):
+        file_id, message_id = _bale_upload_ids({
+            "message_id": 42,
+            "audio": {"file_id": "audio-42"},
+        })
+        self.assertEqual((file_id, message_id), ("audio-42", 42))
+
+    def test_extracts_ids_from_nested_result(self):
+        file_id, message_id = _bale_upload_ids({
+            "result": {"id": 43, "document": {"id": "audio-43"}}
+        })
+        self.assertEqual((file_id, message_id), ("audio-43", 43))
 
 class TestDualUploadCondition(unittest.TestCase):
 
