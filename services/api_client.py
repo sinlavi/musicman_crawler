@@ -12,10 +12,26 @@ class APIClient:
         session = await HttpClient.get_session()
         headers = {
             'Authorization': f'Bearer {self.token}',
+            'Authorization': 'Bearer ' + self.token,
+            'Content-Type': 'application/json'
+        }
+        headers['Authorization'] = 'Bearer ' + self.token
+        try:
+            async with session.post(f"{self.base_url}?action={action}", json=data, headers=headers) as resp:
+                return await resp.json()
+        except Exception as e:
+            logger.error(f"API request failed: {e}")
+            return {'success': False, 'message': str(e)}
+
+    async def _request_path(self, path: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        session = await HttpClient.get_session()
+        headers = {
+            'Authorization': 'Bearer ' + self.token,
             'Content-Type': 'application/json'
         }
         try:
-            async with session.post(f"{self.base_url}?action={action}", json=data, headers=headers) as resp:
+            async with session.post(f"{self.base_url}/{path.lstrip('/')}",
+                                    json=data, headers=headers) as resp:
                 return await resp.json()
         except Exception as e:
             logger.error(f"API request failed: {e}")
@@ -97,4 +113,17 @@ class APIClient:
             'sent_to': sent_to,
             'successful': successful,
             'failed': failed
+        })
+
+    async def save_messenger_file(self, platform: str, track_id: str, file_id: str,
+                                  message_id: str, quality: str, filename: str,
+                                  file_path: str = '') -> Dict[str, Any]:
+        return await self._request_path('file/save', {
+            'platform': platform,
+            'trackId': str(track_id),
+            'fileId': str(file_id),
+            'messageId': str(message_id),
+            'quality': str(quality),
+            'filename': filename,
+            'filePath': file_path,
         })

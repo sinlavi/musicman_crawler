@@ -6,16 +6,18 @@ load_dotenv()
 # Connection Settings
 PROXY = os.getenv("proxy", "socks5h://127.0.0.1:1080")
 BALE_TOKEN = os.getenv("BALE_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TG_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("TG_CHAT_ID")
 
-# Target Chat ID for sending messages
-TARGET_CHAT_ID = 6053683389
+# Target chat ID for sending messages
+TARGET_CHAT_ID = os.getenv("BALE_CHAT_ID") or os.getenv("TARGET_CHAT_ID", "6053683389")
 
 # Optional Bale chat for upload-error notifications
 INFO_CHANNEL_ID = os.getenv("INFO_CHANNEL_ID")
 
 # API Settings
-ITUNES_BASE_URL = os.getenv("ITUNES_BASE_URL", "https://mm.3rah.ir/api")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://musicman.gt.tc/users/index.php")
+ITUNES_BASE_URL = os.getenv("ITUNES_BASE_URL", "https://3rah.ir/mm/api")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://3rah.ir/mm/api")
 API_TOKEN = os.getenv("API_TOKEN", "change_me_to_a_secure_token")
 
 # Bot Behavior

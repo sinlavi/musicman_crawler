@@ -184,12 +184,13 @@ async def get_attachments(entity_type: str, entity_id: Union[int, str], quality:
     return None
 
 
-async def get_cached_audio(track_id: Union[int, str], quality: str = None) -> Optional[str]:
+async def get_cached_audio(track_id: Union[int, str], quality: str = None,
+                           source: str = "bale") -> Optional[str]:
     attachments = await get_attachments('track', track_id, quality=quality or "192")
     if attachments and attachments.get('audioUrls'):
         for audio in attachments['audioUrls']:
             if (str(audio.get('quality')) == str(quality or "192")
-                    and str(audio.get('source', '')).lower() == "bale"):
+                    and str(audio.get('source', '')).lower() == source.lower()):
                 url = audio.get('url')
                 if url:
                     logger.info(f"Cached audio found for {track_id}: {url}")
