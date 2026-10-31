@@ -14,6 +14,14 @@ from core.http_client import HttpClient
 from services.telegram_service import TelegramUploadService
 
 
+def _is_unresolved_telegram_url(url: str) -> bool:
+    return bool(re.search(
+        r"^https://api\.telegram\.org/file/bot[^/]+/\d+$",
+        str(url),
+        flags=re.IGNORECASE,
+    ))
+
+
 class iTunesSQLiteCache:
     def __init__(self, db_path: str = "cache/itunes_cache.db", ttl_seconds: int = 4 * 3600):
         self.db_path = db_path
@@ -220,8 +228,18 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
                     except RuntimeError as error:
                         logger.warning(
                             f"Unable to resolve Telegram file for {track_id}: {error}")
+                        # A URL ending in the Telegram message id is not a
+                        # downloadable file URL. Do not retry a known-stale
+                        # mirror and turn it into repeated HTTP 404 failures.
+                        if _is_unresolved_telegram_url(
+                                str(audio.get("telegramFileUrl") or audio.get("url") or "")):
+                            continue
             url = audio.get("telegramFileUrl") or audio.get('url')
             if url:
+                if source.lower() == "telegram" and _is_unresolved_telegram_url(str(url)):
+                    logger.warning(
+                        f"Skipping unresolved Telegram mirror for {track_id}: {url}")
+                    continue
                 logger.info(f"Cached audio found for {track_id}: {url}")
                 return url
     logger.info(f"No cached audio for {track_id} with quality {quality or '192'}")

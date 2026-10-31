@@ -61,6 +61,14 @@ class TestTelegramThumbnail(unittest.TestCase):
         with Image.open(BytesIO(thumbnail)) as image:
             self.assertEqual(image.format, "JPEG")
 
+    def test_invalid_telegram_message_url_is_not_used_as_file_url(self):
+        from crawlers.itunes import _is_unresolved_telegram_url
+
+        self.assertTrue(_is_unresolved_telegram_url(
+            "https://api.telegram.org/file/bot<token>/27091"))
+        self.assertFalse(_is_unresolved_telegram_url(
+            "https://api.telegram.org/file/bot<token>/music/file_5563.mp3"))
+
 class TestDualUploadCondition(unittest.TestCase):
 
     def test_download_service_dual_upload_condition(self):
