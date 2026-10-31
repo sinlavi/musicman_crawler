@@ -157,8 +157,14 @@ jobs:
           if [[ -n "${YOUTUBE_COOKIES:-}" ]]; then
             printf '%s\n' "$YOUTUBE_COOKIES" > cookies.txt
           fi
-          test -s cookies.txt
-          grep -q '^# Netscape HTTP Cookie File' cookies.txt
+          if [[ ! -s cookies.txt ]]; then
+            echo "::error::YouTube cookies are missing. Add the YOUTUBE_COOKIES Actions secret with the complete Netscape cookies.txt content."
+            exit 1
+          fi
+          if ! grep -q '^# Netscape HTTP Cookie File' cookies.txt; then
+            echo "::error::YOUTUBE_COOKIES is not a valid Netscape cookies.txt file."
+            exit 1
+          fi
           echo "YouTube cookies.txt is present"
 
       - name: Run worker
