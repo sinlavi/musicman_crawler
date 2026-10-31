@@ -33,6 +33,10 @@ class ArtworkService:
                 raise Exception(msg)
             else:
                 logger.warning(f"Artwork not found (404) at {url}. Proceeding to fallback.")
+        if not artwork_bytes and track_name and artist_name:
+            logger.warning(
+                "Artwork unavailable for %s - %s; messenger uploads will omit thumbnail",
+                track_name, artist_name)
 
         # Save downloaded iTunes artwork locally for reuse.
         if artwork_bytes:

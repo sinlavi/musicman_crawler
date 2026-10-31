@@ -71,6 +71,8 @@ class DownloadService:
         """Send audio with metadata omitted by Balethon's high-level wrapper."""
         resolved_chat_id = await self.bot.resolve_peer_id(chat_id)
         thumbnail = TelegramUploadService._prepare_thumbnail(artwork)
+        if artwork and not thumbnail:
+            logger.warning("Artwork bytes could not be converted to Bale thumbnail")
         with open(path, "rb") as audio:
             payload = {
                 "chat_id": resolved_chat_id,
@@ -142,9 +144,21 @@ class DownloadService:
         artist_name = track.get('artistName') or ""
         cover_bytes = album_cover_bytes
         if cover_bytes is None:
+            attachment_artwork = (track.get("attachments") or {}).get("artworkUrls") or []
+            attachment_artwork_url = (
+                attachment_artwork[0].get("url")
+                if attachment_artwork and isinstance(attachment_artwork[0], dict)
+                else None
+            )
+            artwork_url = (
+                track.get("artworkUrl100")
+                or track.get("artworkUrl600")
+                or track.get("artworkUrl")
+                or attachment_artwork_url
+            )
             cover_bytes = await self.artwork_service.get_artwork_bytes(
                 track.get('collectionId') or track_id,
-                track.get('artworkUrl100'),
+                artwork_url,
                 track_name=title,
                 artist_name=artist_name)
         # Check cache
@@ -176,11 +190,15 @@ class DownloadService:
                         chat_id, status_msg, "📤 *در حال ارسال فایل از حافظه کش...*",
                         status_prefix, is_batch, silent=silent)
                     logger.info(f"Sending cached audio: {track.get('trackName')} ({quality_value}kbps)")
+                    cache_thumb = TelegramUploadService._prepare_thumbnail(cover_bytes)
+                    cache_upload_options = {"thumb": cache_thumb} if cache_thumb else {}
                     await self.bot.send_audio(
-                        chat_id, audio=audio_cache, title=title, duration=duration_sec)
+                        chat_id, audio=audio_cache, title=title, duration=duration_sec,
+                        **cache_upload_options)
 
                     await self.bot.send_audio(
-                        chat_id, audio=audio_192_cache, title=title, duration=duration_sec)
+                        chat_id, audio=audio_192_cache, title=title, duration=duration_sec,
+                        **cache_upload_options)
 
                     if not is_batch:
                         await safe_delete(status_msg)

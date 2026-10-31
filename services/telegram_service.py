@@ -69,7 +69,7 @@ class TelegramUploadService:
                     if len(thumbnail) <= 200 * 1024:
                         return thumbnail
                     quality -= 10
-        except (OSError, ValueError):
+        except (OSError, TypeError, ValueError):
             return None
         return None
 
