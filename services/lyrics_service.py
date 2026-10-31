@@ -1,7 +1,7 @@
 import asyncio
 import random
 from ytmusicapi import YTMusic
-from core.config import LRCLIB_API_KEY, LRCLIB_APP_ID, PROXY
+from core.config import COOKIES_FILE, LRCLIB_API_KEY, LRCLIB_APP_ID, PROXY
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -28,14 +28,14 @@ def _load_cookies_as_header(cookie_file):
 
 class LyricsService:
     def __init__(self):
-        cookies_path = "cookies.txt"
+        cookies_path = COOKIES_FILE
         cookie_header = _load_cookies_as_header(cookies_path)
 
         self.ytm_proxied = YTMusic(proxies={"https": PROXY, "http": PROXY})
         self.ytm_direct = YTMusic()
 
         if cookie_header:
-            logger.info(f"Adding Cookie header from: {cookies_path}")
+            logger.info("Adding Cookie header from: cookies.txt")
             self.ytm_proxied.headers["Cookie"] = cookie_header
             self.ytm_direct.headers["Cookie"] = cookie_header
 

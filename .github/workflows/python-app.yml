@@ -33,6 +33,7 @@ jobs:
       PROXY: socks5h://127.0.0.1:1080
       OFFLINE_MODE: ${{ secrets.OFFLINE_MODE }}
       INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
+      YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
       INSTANCE_ID: ${{ matrix.instance }}
       TOTAL_INSTANCES: 3
       PYTHONUNBUFFERED: "1"
@@ -149,6 +150,16 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Verify YouTube cookies
+        run: |
+          set -euo pipefail
+          if [[ -n "${YOUTUBE_COOKIES:-}" ]]; then
+            printf '%s\n' "$YOUTUBE_COOKIES" > cookies.txt
+          fi
+          test -s cookies.txt
+          grep -q '^# Netscape HTTP Cookie File' cookies.txt
+          echo "YouTube cookies.txt is present"
 
       - name: Run worker
         run: python main.py

@@ -1,10 +1,14 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # Connection Settings
 PROXY = os.getenv("PROXY") or os.getenv("proxy", "socks5h://127.0.0.1:1080")
+COOKIES_FILE = os.getenv("COOKIES_FILE") or str(
+    Path(__file__).resolve().parents[1] / "cookies.txt"
+)
 BALE_TOKEN = os.getenv("BALE_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TG_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("TG_CHAT_ID")

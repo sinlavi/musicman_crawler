@@ -19,10 +19,11 @@ from rapidfuzz import fuzz
 from ytmusicapi import YTMusic
 
 try:
-    from core.config import OFFLINE_MODE, PROXY, USER_AGENTS
+    from core.config import COOKIES_FILE, OFFLINE_MODE, PROXY, USER_AGENTS
 except ImportError:
     OFFLINE_MODE = False
     PROXY = "socks5h://127.0.0.1:1080"
+    COOKIES_FILE = str(Path(__file__).resolve().parents[1] / "cookies.txt")
 
 logger = logging.getLogger("yt_downloader")
 logging.basicConfig(level=logging.INFO)
@@ -69,14 +70,13 @@ def _get_cookies_path() -> Optional[str]:
     Get the path to cookies.txt in the root project folder.
     Returns None if the file doesn't exist.
     """
-    script_dir = Path(__file__).parent
-    cookies_path = script_dir / "cookies.txt"
+    cookies_path = Path(COOKIES_FILE).expanduser()
     
     if cookies_path.exists() and cookies_path.is_file():
-        logger.info(f"Found cookies file at: {cookies_path}")
+        logger.info("Using YouTube cookies from: %s", cookies_path)
         return str(cookies_path)
     else:
-        logger.debug(f"No cookies.txt found at: {cookies_path}")
+        logger.warning("YouTube cookies file not found: %s", cookies_path)
         return None
 
 
