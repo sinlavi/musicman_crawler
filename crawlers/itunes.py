@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, Literal, List, Union, Tuple
 from pathlib import Path
 import aiosqlite
 
-from core.config import ITUNES_BASE_URL, OFFLINE_MODE, PROXY, API_TOKEN
+from core.config import ITUNES_BASE_URL, OFFLINE_MODE, PROXY, API_TOKEN, TELEGRAM_TOKEN
 from core.logger import logger
 from core.http_client import HttpClient
 
@@ -195,6 +195,10 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
         for audio in attachments['audioUrls']:
             if (str(audio.get('quality')) == str(quality or "192")
                     and str(audio.get('source', '')).lower() == source.lower()):
+                if source.lower() == "telegram":
+                    file_path = audio.get("telegramFilePath")
+                    if file_path and TELEGRAM_TOKEN:
+                        return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
                 url = audio.get('url')
                 if url:
                     logger.info(f"Cached audio found for {track_id}: {url}")

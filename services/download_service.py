@@ -285,7 +285,16 @@ class DownloadService:
                     # The API mirror is the stable platform/message reference.
                     # Keep the resolved file URL only in the messenger-file
                     # record because Telegram requires file_path for downloads.
-                    telegram_file_path = await self.telegram.file_url(telegram_file_id)
+                    telegram_file_path = ""
+                    try:
+                        telegram_file_path = await self.telegram.file_url(telegram_file_id)
+                    except RuntimeError as file_error:
+                        if "file is too big" not in str(file_error).lower():
+                            raise
+                        logger.warning(
+                            "Telegram getFile cannot resolve file %s because it exceeds "
+                            "the Bot API download limit; keeping the uploaded mirror",
+                            telegram_file_id)
                     telegram_mirror = (
                         f"https://api.telegram.org/file/bot"
                         f"{self.telegram.token}/{telegram_message_id}"

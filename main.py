@@ -160,10 +160,10 @@ async def run_crawler():
                 if queue_resp is None:
                     consecutive_tech_errors += 1
                     logger.warning(f"Technical error encountered ({consecutive_tech_errors}/10)")
-                    if consecutive_tech_errors >= 10:
+                    if consecutive_tech_errors >= 30:
                         logger.critical("Too many consecutive technical errors. Exiting for workflow restart...")
                         sys.exit(1)
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(min(60, 10 + consecutive_tech_errors))
                     continue
 
                 # Reset error counter on any non-technical response
