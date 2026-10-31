@@ -145,12 +145,10 @@ class TestCacheHitDualUpload(unittest.IsolatedAsyncioTestCase):
 
             await service.download_and_send_track(chat_id=1234, track_id=124, user_id=99)
 
-            # Both quality variants are sent even for short tracks.
-            self.assertEqual(bot.send_audio.call_count, 2)
+            # Short tracks only send the original 320kbps variant.
+            self.assertEqual(bot.send_audio.call_count, 1)
             first_call_audio = bot.send_audio.call_args_list[0].kwargs['audio']
             self.assertEqual(first_call_audio, "file_320_id")
-            self.assertEqual(
-                bot.send_audio.call_args_list[1].kwargs['audio'], "file_192_id")
 
 
 class TestTelegramArtwork(unittest.IsolatedAsyncioTestCase):

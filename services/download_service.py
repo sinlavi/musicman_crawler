@@ -54,6 +54,10 @@ def _telegram_mirror_url(message_id: object) -> str:
     return f"https://api.telegram.org/file/bot<token>/{message_id}"
 
 
+def _needs_192_copy(duration_sec: Optional[int]) -> bool:
+    return duration_sec is not None and duration_sec > 8 * 60
+
+
 class DownloadService:
     def __init__(self, bot, api_client, artwork_service,
                  tagging_service, error_notifier):
@@ -135,7 +139,6 @@ class DownloadService:
             if album_name:
                 status_prefix += f"\n💿 *آلبوم:* {album_name}"
 
-        # Always build both messenger variants from one 320 kbps source.
         quality_value = "320"
 
         duration_ms = int(track.get('trackTimeMillis') or 0)
@@ -162,18 +165,29 @@ class DownloadService:
                 track_name=title,
                 artist_name=artist_name)
         # Check cache
-        audio_cache = await get_cached_audio(track_id, quality=quality_value)
-        telegram_cache = None
+        needs_192 = _needs_192_copy(duration_sec)
+        cache_tasks = [get_cached_audio(track_id, quality=quality_value)]
         if self.telegram.enabled:
-            telegram_cache = await get_cached_audio(
-                track_id, quality="320", source="telegram",
-                api_client=self.api_client)
-        audio_192_cache = await get_cached_audio(track_id, quality="192")
-        telegram_192_cache = None
-        if self.telegram.enabled:
-            telegram_192_cache = await get_cached_audio(
-                track_id, quality="192", source="telegram",
-                api_client=self.api_client)
+            cache_tasks.append(get_cached_audio(
+                track_id, quality=quality_value, source="telegram",
+                api_client=self.api_client))
+        if needs_192:
+            cache_tasks.append(get_cached_audio(track_id, quality="192"))
+            if self.telegram.enabled:
+                cache_tasks.append(get_cached_audio(
+                    track_id, quality="192", source="telegram",
+                    api_client=self.api_client))
+        cache_results = await asyncio.gather(*cache_tasks)
+        audio_cache = cache_results[0]
+        cache_index = 1
+        telegram_cache = cache_results[cache_index] if self.telegram.enabled else None
+        cache_index += 1 if self.telegram.enabled else 0
+        audio_192_cache = cache_results[cache_index] if needs_192 else None
+        cache_index += 1 if needs_192 else 0
+        telegram_192_cache = (
+            cache_results[cache_index]
+            if needs_192 and self.telegram.enabled else None
+        )
         # A Bale message mirror is only a reference to a message, not a
         # downloadable URL. Continue through the mirror-download flow so a
         # Telegram mirror can repair Bale without downloading from YouTube.
@@ -184,7 +198,9 @@ class DownloadService:
             # A completed dual-platform cache hit must already contain both
             # mirrors; otherwise continue and repair the missing platform.
             if (telegram_cache or not self.telegram.enabled) and (
-                    audio_192_cache and (telegram_192_cache or not self.telegram.enabled)):
+                    not needs_192 or (
+                    audio_192_cache and
+                    (telegram_192_cache or not self.telegram.enabled))):
                 try:
                     status_msg = await self._update_status(
                         chat_id, status_msg, "📤 *در حال ارسال فایل از حافظه کش...*",
@@ -196,9 +212,10 @@ class DownloadService:
                         chat_id, audio=audio_cache, title=title, duration=duration_sec,
                         **cache_upload_options)
 
-                    await self.bot.send_audio(
-                        chat_id, audio=audio_192_cache, title=title, duration=duration_sec,
-                        **cache_upload_options)
+                    if needs_192:
+                        await self.bot.send_audio(
+                            chat_id, audio=audio_192_cache, title=title, duration=duration_sec,
+                            **cache_upload_options)
 
                     if not is_batch:
                         await safe_delete(status_msg)
@@ -284,12 +301,15 @@ class DownloadService:
             await update_download_status(download_id, "downloading", percent=90)
         status_msg = await self._update_status(chat_id, status_msg, "📤 *در حال ارسال فایل در پیام‌رسان‌ها...*",
                                                status_prefix, is_batch, silent=silent)
+        uploaded_192 = False
         try:
             async def upload_quality(path: str, quality: str) -> None:
-                cached_bale = await get_cached_audio(
-                    track_id, quality=quality, source="bale",
-                    api_client=self.api_client)
-                if not cached_bale:
+                async def upload_bale() -> None:
+                    cached_bale = await get_cached_audio(
+                        track_id, quality=quality, source="bale",
+                        api_client=self.api_client)
+                    if cached_bale:
+                        return
                     logger.info(
                         f"Uploading Bale audio: {track.get('trackName')} ({quality}kbps)")
                     bale_msg = await self._send_bale_audio(
@@ -304,37 +324,41 @@ class DownloadService:
                         "bale", str(track_id), bale_file_id, str(bale_message_id),
                         quality, os.path.basename(path), bale_mirror)
 
-                if self.telegram.enabled:
+                async def upload_telegram() -> None:
+                    if not self.telegram.enabled:
+                        return
                     cached_telegram = await get_cached_audio(
                         track_id, quality=quality, source="telegram",
                         api_client=self.api_client)
-                    if not cached_telegram:
-                        telegram_message = await self.telegram.upload_audio(
-                            path, title, duration_sec, performer=artist_name,
-                            artwork=cover_bytes)
-                        telegram_audio = telegram_message.get("audio") or {}
-                        telegram_file_id = telegram_audio.get("file_id")
-                        telegram_message_id = telegram_message.get("message_id")
-                        if not telegram_file_id or telegram_message_id is None:
-                            raise RuntimeError(
-                                "Telegram upload returned no file or message id")
-                        telegram_file_path = ""
-                        try:
-                            telegram_file_path = await self.telegram.file_url(telegram_file_id)
-                        except RuntimeError as file_error:
-                            if "file is too big" not in str(file_error).lower():
-                                raise
-                            logger.warning(
-                                "Telegram getFile cannot resolve oversized file %s",
-                                telegram_file_id)
-                        telegram_mirror = _telegram_mirror_url(telegram_message_id)
-                        await set_mirror(
-                            "track", str(track_id), "audioUrl", telegram_mirror,
-                            quality=quality, source="telegram")
-                        await self.api_client.save_messenger_file(
-                            "telegram", str(track_id), telegram_file_id,
-                            str(telegram_message_id), quality,
-                            os.path.basename(path), telegram_file_path)
+                    if cached_telegram:
+                        return
+                    telegram_message = await self.telegram.upload_audio(
+                        path, title, duration_sec, performer=artist_name,
+                        artwork=cover_bytes)
+                    telegram_audio = telegram_message.get("audio") or {}
+                    telegram_file_id = telegram_audio.get("file_id")
+                    telegram_message_id = telegram_message.get("message_id")
+                    if not telegram_file_id or telegram_message_id is None:
+                        raise RuntimeError("Telegram upload returned no file or message id")
+                    telegram_file_path = ""
+                    try:
+                        telegram_file_path = await self.telegram.file_url(telegram_file_id)
+                    except RuntimeError as file_error:
+                        if "file is too big" not in str(file_error).lower():
+                            raise
+                        logger.warning(
+                            "Telegram getFile cannot resolve oversized file %s",
+                            telegram_file_id)
+                    telegram_mirror = _telegram_mirror_url(telegram_message_id)
+                    await set_mirror(
+                        "track", str(track_id), "audioUrl", telegram_mirror,
+                        quality=quality, source="telegram")
+                    await self.api_client.save_messenger_file(
+                        "telegram", str(track_id), telegram_file_id,
+                        str(telegram_message_id), quality,
+                        os.path.basename(path), telegram_file_path)
+
+                await asyncio.gather(upload_bale(), upload_telegram())
 
             try:
                 await upload_quality(mp3_path, "320")
@@ -348,16 +372,17 @@ class DownloadService:
                                              lyrics=lyrics_to_tag)
                 await upload_quality(retry_path, "192")
                 mp3_path = retry_path
+                uploaded_192 = True
         except Exception as e:
             logger.error(f"Messenger upload failed: {e}")
             raise
 
         try:
-            converted_path = mp3_path.replace(".mp3", "_192.mp3")
-            if convert_bitrate(Path(mp3_path), Path(converted_path), "192"):
-                self.tagging_service.tag_mp3(Path(converted_path), track, cover_bytes,
-                                             lyrics=lyrics_to_tag)
-                if not audio_192_cache or (self.telegram.enabled and not telegram_192_cache):
+            if needs_192 and not uploaded_192 and mp3_path.endswith(".mp3"):
+                converted_path = mp3_path.replace(".mp3", "_192.mp3")
+                if convert_bitrate(Path(mp3_path), Path(converted_path), "192"):
+                    self.tagging_service.tag_mp3(Path(converted_path), track, cover_bytes,
+                                                 lyrics=lyrics_to_tag)
                     await upload_quality(converted_path, "192")
 
             await self.error_notifier.check_and_clear_if_resolved(self.bot, test_success=True)
