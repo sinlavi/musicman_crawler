@@ -191,16 +191,27 @@ class DownloadService:
                                                    is_batch, silent=silent)
             return status_msg, False
 
-        # Download from Telegram when available, otherwise download from YouTube.
+        # Try the Telegram mirror once. A failed mirror must fall back to the
+        # original YouTube flow within this attempt.
+        telegram_downloaded = False
         if telegram_cache:
             temp_dir = tempfile.mkdtemp(prefix="musicman-telegram-")
             mp3_path = os.path.join(temp_dir, f"{track_id}_{quality_value}.mp3")
             status_msg = await self._update_status(
                 chat_id, status_msg, "📥 *در حال دریافت فایل آماده از تلگرام...*",
                 status_prefix, is_batch, silent=silent)
-            await self.telegram.download(telegram_cache, Path(mp3_path))
-            lyrics_to_tag = None
-        else:
+            try:
+                await self.telegram.download(telegram_cache, Path(mp3_path))
+                telegram_downloaded = True
+                lyrics_to_tag = None
+            except Exception as telegram_error:
+                logger.warning(
+                    f"Telegram mirror download failed once for {track_id}; "
+                    f"falling back to YouTube: {telegram_error}")
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                temp_dir = None
+
+        if not telegram_downloaded:
             if download_id:
                 await update_download_status(download_id, "downloading", percent=25)
             status_msg = await self._update_status(chat_id, status_msg, "🔍 *در حال جستجوی منبع با کیفیت...*",
