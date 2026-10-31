@@ -33,7 +33,6 @@ jobs:
       PROXY: socks5h://127.0.0.1:1080
       OFFLINE_MODE: ${{ secrets.OFFLINE_MODE }}
       INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
-      YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
       INSTANCE_ID: ${{ matrix.instance }}
       TOTAL_INSTANCES: 3
       PYTHONUNBUFFERED: "1"
@@ -154,15 +153,12 @@ jobs:
       - name: Verify YouTube cookies
         run: |
           set -euo pipefail
-          if [[ -n "${YOUTUBE_COOKIES:-}" ]]; then
-            printf '%s\n' "$YOUTUBE_COOKIES" > cookies.txt
-          fi
           if [[ ! -s cookies.txt ]]; then
-            echo "::error::YouTube cookies are missing. Add the YOUTUBE_COOKIES Actions secret with the complete Netscape cookies.txt content."
+            echo "::error::cookies.txt is missing from the repository checkout."
             exit 1
           fi
           if ! grep -q '^# Netscape HTTP Cookie File' cookies.txt; then
-            echo "::error::YOUTUBE_COOKIES is not a valid Netscape cookies.txt file."
+            echo "::error::cookies.txt is not a valid Netscape cookies.txt file."
             exit 1
           fi
           echo "YouTube cookies.txt is present"

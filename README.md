@@ -131,8 +131,6 @@ Optional:
 - `API_TOKEN`: API authentication token, if enabled by the server.
 - `LRCLIB_APP_ID`: registered LRCLIB application ID, if available.
 - `LRCLIB_API_KEY`: registered LRCLIB server API key, if available.
-- `YOUTUBE_COOKIES`: complete Netscape-format `cookies.txt` contents for YouTube
-       authentication in GitHub Actions. Keep this secret out of the repository.
 
 The Telegram bot must be an administrator of the target channel/group with permission
 to post audio. GitHub repository secrets are configured under **Settings → Secrets and
