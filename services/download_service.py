@@ -5,7 +5,6 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Optional, Union, List
 from core.logger import logger
 from core.config import OFFLINE_MODE, DEFAULT_QUALITY
@@ -22,6 +21,32 @@ def _is_file_too_large_error(err: Exception) -> bool:
     err_str = str(err).lower()
     large_keywords = ["file is too large", "file_too_large", "request entity too large", "413"]
     return any(keyword in err_str for keyword in large_keywords)
+
+
+def _bale_upload_ids(response):
+    """Extract message and audio IDs from the response variants Bale returns."""
+    if not response:
+        return None, None
+    if isinstance(response, dict) and isinstance(response.get("result"), dict):
+        response = response["result"]
+
+    def value(data, *keys):
+        if isinstance(data, dict):
+            for key in keys:
+                if data.get(key) is not None:
+                    return data[key]
+        else:
+            for key in keys:
+                item = getattr(data, key, None)
+                if item is not None:
+                    return item
+        return None
+
+    message_id = value(response, "message_id", "messageId", "id")
+    media = value(response, "audio", "document", "file")
+    file_id = value(media, "file_id", "fileId", "id") or value(
+        response, "file_id", "fileId", "audio_id", "audioId")
+    return file_id, message_id
 
 
 class DownloadService:
@@ -50,13 +75,6 @@ class DownloadService:
                 "thumb": artwork,
             }
             result = await self.bot.execute("post", "sendAudio", **payload)
-            if isinstance(result, dict):
-                audio_data = result.get("audio") or result.get("document") or {}
-                audio = SimpleNamespace(**audio_data) if isinstance(audio_data, dict) else audio_data
-                return SimpleNamespace(
-                    id=result.get("message_id", result.get("id")),
-                    audio=audio,
-                )
             return result
 
     async def _update_status(self, chat_id, status_msg, text, status_prefix="", is_batch=False, silent=False):
@@ -241,10 +259,13 @@ class DownloadService:
                     chat_id, retry_path, title, duration_sec, artist_name, cover_bytes)
                 mp3_path = retry_path
                 quality_value = "192"
-            bale_file_id = getattr(getattr(msg, "audio", None), "id", None)
-            bale_message_id = getattr(msg, "id", None) or getattr(msg, "message_id", None)
+            bale_file_id, bale_message_id = _bale_upload_ids(msg)
             if not bale_file_id or bale_message_id is None:
-                raise RuntimeError("Bale upload returned no file or message id")
+                response_type = type(msg).__name__
+                response_keys = list(msg.keys()) if isinstance(msg, dict) else []
+                raise RuntimeError(
+                    f"Bale upload returned no file or message id "
+                    f"(type={response_type}, keys={response_keys})")
             bale_mirror = f"bale://{bale_message_id}"
             await set_mirror('track', str(track_id), 'audioUrl', bale_mirror,
                              quality=quality_value, source="bale")
