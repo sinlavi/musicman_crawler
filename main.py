@@ -1,4 +1,7 @@
-from core.config import BALE_TOKEN, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY
+from core.config import (
+    BALE_TOKEN, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY,
+    TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
+)
 import os
 
 # Set global proxy environment variables
@@ -87,6 +90,20 @@ async def process_queue_item(bot, item, download_service, user_id, active_tasks,
 
 async def run_crawler():
     from balethon import Client
+
+    missing = [
+        name for name, value in (
+            ("BALE_TOKEN", BALE_TOKEN),
+            ("BALE_CHAT_ID", TARGET_CHAT_ID),
+            ("TELEGRAM_TOKEN", TELEGRAM_TOKEN),
+            ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID),
+        ) if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "Both messenger uploads are required; missing environment variables: "
+            + ", ".join(missing)
+        )
 
     # Initialize Services
     api_client = APIClient(API_BASE_URL, API_TOKEN)

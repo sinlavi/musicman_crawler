@@ -94,11 +94,14 @@ Create a `.env` file in the root directory:
 ```env
 # Bale Messenger Configuration
 BALE_TOKEN=your_bale_bot_token
-TARGET_CHAT_ID=6053683389
+BALE_CHAT_ID=6053683389
 INFO_CHANNEL_ID=your_bale_status_chat_id
+# Required Telegram mirror storage
+TELEGRAM_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_channel_id
 
 # API & Instance Settings
-API_BASE_URL=https://musicman.gt.tc/users/index.php
+API_BASE_URL=https://3rah.ir/mm/api
 API_TOKEN=your_secure_api_token
 ITUNES_BASE_URL=https://3rah.ir/mm/api
 
@@ -110,6 +113,26 @@ TOTAL_INSTANCES=1
 proxy=socks5h://127.0.0.1:1080
 OFFLINE_MODE=False
 ```
+
+### GitHub Actions secrets
+
+Required for every worker:
+
+- `BALE_TOKEN`: token from the Bale bot used to upload audio.
+- `BALE_CHAT_ID`: Bale channel/group/chat ID where audio is uploaded.
+- `TELEGRAM_TOKEN`: token from `@BotFather` for the Telegram bot used to upload audio.
+- `TELEGRAM_CHAT_ID`: Telegram channel/group ID where the bot uploads mirrors.
+
+Optional:
+
+- `INFO_CHANNEL_ID`: Bale chat for error notifications.
+- `proxy`: proxy URL for messenger/API/YouTube traffic.
+- `OFFLINE_MODE`: set to `True` only for local offline testing.
+- `API_TOKEN`: API authentication token, if enabled by the server.
+
+The Telegram bot must be an administrator of the target channel/group with permission
+to post audio. GitHub repository secrets are configured under **Settings → Secrets and
+variables → Actions**.
 
 ### 4. Running the Crawler
 

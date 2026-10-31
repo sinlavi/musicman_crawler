@@ -1,7 +1,9 @@
 from services.lyrics_service import lyrics_service
+from services.telegram_service import TelegramUploadService
 import asyncio
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional, Union, List
 from core.logger import logger
@@ -30,6 +32,7 @@ class DownloadService:
         self.tagging_service = tagging_service
         self.error_notifier = error_notifier
         self.download_semaphore = asyncio.Semaphore(100)
+        self.telegram = TelegramUploadService()
 
     async def _update_status(self, chat_id, status_msg, text, status_prefix="", is_batch=False, silent=False):
         if silent:
@@ -88,46 +91,54 @@ class DownloadService:
         title = track.get('trackName')
         # Check cache
         audio_cache = await get_cached_audio(track_id, quality=quality_value)
+        telegram_cache = None
+        if self.telegram.enabled:
+            telegram_cache = await get_cached_audio(
+                track_id, quality=quality_value, source="telegram")
         if audio_cache:
             logger.info(f"Using cached audio for track {track_id} (quality: {quality_value}) -> {audio_cache}")
-            try:
-                status_msg = await self._update_status(chat_id, status_msg, "📤 *در حال ارسال فایل از حافظه کش...*",
-                                                       status_prefix, is_batch, silent=silent)
-                logger.info(f"Sending cached audio: {track.get('trackName')} ({quality_value}kbps)")
+            # A completed dual-platform cache hit must already contain both
+            # mirrors; otherwise continue and repair the missing platform.
+            if telegram_cache or not self.telegram.enabled:
+                try:
+                    status_msg = await self._update_status(
+                        chat_id, status_msg, "📤 *در حال ارسال فایل از حافظه کش...*",
+                        status_prefix, is_batch, silent=silent)
+                    logger.info(f"Sending cached audio: {track.get('trackName')} ({quality_value}kbps)")
+                    await self.bot.send_audio(
+                        chat_id, audio=audio_cache, title=title, duration=duration_sec)
 
-                await self.bot.send_audio(chat_id, audio=audio_cache, title=title, duration=duration_sec)
-
-                # Send 192kbps cached audio if track is longer than 8 minutes (480s)
-                if duration_sec is not None and duration_sec > 480 and str(quality_value) == "320":
-                    audio_192_cache = await get_cached_audio(track_id, quality="192")
-                    if audio_192_cache:
-                        try:
-                            logger.info(f"Sending cached 192kbps audio for long track {track_id}")
+                    if duration_sec is not None and duration_sec > 480 and str(quality_value) == "320":
+                        audio_192_cache = await get_cached_audio(track_id, quality="192")
+                        if audio_192_cache:
                             await self.bot.send_audio(
-                                chat_id, audio=audio_192_cache, title=title, duration=duration_sec
-                            )
-                        except Exception as e_192:
-                            logger.error(f"Failed to send 192kbps cached audio: {e_192}")
+                                chat_id, audio=audio_192_cache, title=title, duration=duration_sec)
 
-                if not is_batch: await safe_delete(status_msg)
-                await self.api_client.log_download(user_id, str(track_id), track.get('trackName', ''),
-                                                   track.get('artistName', ''), track.get('collectionName', ''),
-                                                   0, 'cache', quality_value)
-                await self.error_notifier.check_and_clear_if_resolved(self.bot, test_success=True)
-                return status_msg, True
-            except Exception as e:
-                logger.error(f"Cache send failed: {e}")
-                await self.error_notifier.notify_upload_error(self.bot, str(e))
+                    if not is_batch:
+                        await safe_delete(status_msg)
+                    await self.api_client.log_download(
+                        user_id, str(track_id), track.get('trackName', ''),
+                        track.get('artistName', ''), track.get('collectionName', ''),
+                        0, 'cache', quality_value)
+                    await self.error_notifier.check_and_clear_if_resolved(
+                        self.bot, test_success=True)
+                    return status_msg, True
+                except Exception as e:
+                    logger.error(f"Cache send failed: {e}")
+                    await self.error_notifier.notify_upload_error(self.bot, str(e))
+
+        # A Telegram mirror is a tagged local artifact. Reuse it when Bale is
+        # missing so a second YouTube download is not required.
 
         if OFFLINE_MODE:
             status_msg = await self._update_status(chat_id, status_msg, "بات در حالت آفلاین است.", status_prefix,
                                                    is_batch, silent=silent)
             return status_msg, False
 
-        # Download from YouTube
+        # Download from Telegram when available, otherwise download from YouTube.
         cover_bytes = album_cover_bytes
         # show_artwork is now effectively always True as settings are removed
-        if cover_bytes is None:
+        if cover_bytes is None and not telegram_cache:
             status_msg = await self._update_status(chat_id, status_msg, "🖼️ *در حال دریافت کاور آهنگ...*",
                                                    status_prefix, is_batch, silent=silent)
 
@@ -136,23 +147,31 @@ class DownloadService:
                                                                        track_name=track.get('trackName'),
                                                                        artist_name=track.get('artistName'))
 
-        if download_id:
-            await update_download_status(download_id, "downloading", percent=25)
-        status_msg = await self._update_status(chat_id, status_msg, "🔍 *در حال جستجوی منبع با کیفیت...*",
-                                               status_prefix, is_batch, silent=silent)
-        logger.info(f"Searching YouTube for track {track_id}: {track.get('trackName')} - {track.get('artistName')}")
-        video_id = await search_youtube_track(track.get("trackName", ""), track.get("artistName", ""),
-                                              track.get("collectionName", ""), (track.get("releaseDate") or "")[:4],
-                                              target_duration_ms=duration_ms)
+        if telegram_cache:
+            temp_dir = tempfile.mkdtemp(prefix="musicman-telegram-")
+            mp3_path = os.path.join(temp_dir, f"{track_id}_{quality_value}.mp3")
+            status_msg = await self._update_status(
+                chat_id, status_msg, "📥 *در حال دریافت فایل آماده از تلگرام...*",
+                status_prefix, is_batch, silent=silent)
+            await self.telegram.download(telegram_cache, Path(mp3_path))
+            lyrics_to_tag = None
+        else:
+            if download_id:
+                await update_download_status(download_id, "downloading", percent=25)
+            status_msg = await self._update_status(chat_id, status_msg, "🔍 *در حال جستجوی منبع با کیفیت...*",
+                                                   status_prefix, is_batch, silent=silent)
+            logger.info(f"Searching YouTube for track {track_id}: {track.get('trackName')} - {track.get('artistName')}")
+            video_id = await search_youtube_track(track.get("trackName", ""), track.get("artistName", ""),
+                                                  track.get("collectionName", ""), (track.get("releaseDate") or "")[:4],
+                                                  target_duration_ms=duration_ms)
 
-        if not video_id:
-            status_msg = await self._update_status(chat_id, status_msg, "❌ منبعی برای ترک خواسته شده پیدا نشد.", status_prefix,
-                                                   is_batch, silent=silent)
-            return status_msg, False
+            if not video_id:
+                status_msg = await self._update_status(chat_id, status_msg, "❌ منبعی برای ترک خواسته شده پیدا نشد.", status_prefix,
+                                                       is_batch, silent=silent)
+                return status_msg, False
 
-        video_url = f"https://music.youtube.com/watch?v={video_id}"
-        temp_dir = None
-        try:
+            video_url = f"https://music.youtube.com/watch?v={video_id}"
+            temp_dir = None
             async with self.download_semaphore:
                 if download_id:
                     await update_download_status(download_id, "downloading", percent=40)
@@ -161,103 +180,118 @@ class DownloadService:
                                                        status_prefix, is_batch, silent=silent)
                 logger.info(f"Downloading from YouTube: {video_url} with quality {quality_value}")
                 mp3_path = await download_audio(video_url, quality=quality_value)
-                if not mp3_path: raise Exception("Download failed")
-
+                if not mp3_path:
+                    raise Exception("Download failed")
                 temp_dir = os.path.dirname(mp3_path)
-                if download_id:
-                    await update_download_status(download_id, "downloading", percent=70)
-                lyrics_dict = await lyrics_service.get_lyrics(track_id, track.get("trackName", ""),
-                                                              track.get("artistName", ""), track.get("collectionName"),
-                                                              duration_ms=duration_ms)
 
-                if lyrics_dict is None:
-                     msg = f"Technical error fetching lyrics for {track_id}"
-                     logger.error(msg)
-                     raise Exception(msg)
+            if download_id:
+                await update_download_status(download_id, "downloading", percent=70)
+            lyrics_dict = await lyrics_service.get_lyrics(track_id, track.get("trackName", ""),
+                                                          track.get("artistName", ""), track.get("collectionName"),
+                                                          duration_ms=duration_ms)
+            if lyrics_dict is None:
+                raise Exception(f"Technical error fetching lyrics for {track_id}")
+            lyrics_to_tag = (lyrics_dict.get("synced") or lyrics_dict.get("plain"))
+            if download_id:
+                await update_download_status(download_id, "downloading", percent=75)
+            status_msg = await self._update_status(chat_id, status_msg, "🏷️ *در حال تگ‌گذاری فایل...*",
+                                                   status_prefix, is_batch, silent=silent)
+            self.tagging_service.tag_mp3(Path(mp3_path), track, cover_bytes, lyrics=lyrics_to_tag)
 
-                if download_id:
-                    await update_download_status(download_id, "downloading", percent=75)
-                status_msg = await self._update_status(chat_id, status_msg, "🏷️ *در حال تگ‌گذاری فایل...*",
-                                                       status_prefix, is_batch, silent=silent)
-                lyrics_to_tag = (lyrics_dict.get("synced") or lyrics_dict.get("plain")) if lyrics_dict else None
-                self.tagging_service.tag_mp3(Path(mp3_path), track, cover_bytes, lyrics=lyrics_to_tag)
-
-                if download_id:
-                    await update_download_status(download_id, "downloading", percent=90)
-                status_msg = await self._update_status(chat_id, status_msg, "📤 *در حال ارسال فایل در بله...*",
-                                                       status_prefix, is_batch, silent=silent)
-
+        if download_id:
+            await update_download_status(download_id, "downloading", percent=90)
+        status_msg = await self._update_status(chat_id, status_msg, "📤 *در حال ارسال فایل در پیام‌رسان‌ها...*",
+                                               status_prefix, is_batch, silent=silent)
+        try:
+            try:
                 with open(mp3_path, 'rb') as f:
-                    logger.info(f"Uploading fresh audio: {track.get('trackName')} ({quality_value}kbps)")
+                    logger.info(f"Uploading Bale audio: {track.get('trackName')} ({quality_value}kbps)")
+                    msg = await self.bot.send_audio(chat_id, audio=f, title=title, duration=duration_sec)
+            except Exception as upload_error:
+                if not (_is_file_too_large_error(upload_error) and str(quality_value) == "320"):
+                    raise
+                retry_path = mp3_path.replace(".mp3", "_retry_192.mp3")
+                if not convert_bitrate(Path(mp3_path), Path(retry_path), "192"):
+                    raise upload_error
+                self.tagging_service.tag_mp3(Path(retry_path), track, cover_bytes,
+                                             lyrics=lyrics_to_tag)
+                with open(retry_path, "rb") as f:
+                    msg = await self.bot.send_audio(
+                        chat_id, audio=f, title=title, duration=duration_sec)
+                mp3_path = retry_path
+                quality_value = "192"
+            bale_file_id = getattr(getattr(msg, "audio", None), "id", None)
+            bale_message_id = getattr(msg, "id", None) or getattr(msg, "message_id", None)
+            if not bale_file_id or bale_message_id is None:
+                raise RuntimeError("Bale upload returned no file or message id")
+            bale_mirror = f"bale:///{bale_message_id}"
+            await set_mirror('track', str(track_id), 'audioUrl', bale_mirror,
+                             quality=quality_value, source="bale")
+            await self.api_client.save_messenger_file(
+                "bale", str(track_id), bale_file_id, str(bale_message_id),
+                quality_value, os.path.basename(mp3_path), bale_mirror)
 
-                    try:
-                        msg = await self.bot.send_audio(
-                            chat_id, audio=f, title=title, duration=duration_sec
-                        )
-                    except Exception as e:
-                        if _is_file_too_large_error(e) and str(quality_value) == "320":
-                            logger.warning(f"File too large for 320kbps (error: {e}), retrying with 192kbps: {track.get('trackName')}")
-                            status_msg = await self._update_status(chat_id, status_msg, "⚠️ *حجم فایل زیاد است، در حال تبدیل به ۱۹۲...*",
-                                                                   status_prefix, is_batch, silent=silent)
+            if self.telegram.enabled:
+                telegram_mirror = await get_cached_audio(
+                    track_id, quality=quality_value, source="telegram")
+                if not telegram_mirror:
+                    with open(mp3_path, "rb") as f:
+                        telegram_message = await self.telegram.upload_audio(
+                            mp3_path, title, duration_sec)
+                    telegram_audio = telegram_message.get("audio") or {}
+                    telegram_file_id = telegram_audio.get("file_id")
+                    telegram_message_id = telegram_message.get("message_id")
+                    if not telegram_file_id or telegram_message_id is None:
+                        raise RuntimeError("Telegram upload returned no file or message id")
+                    telegram_file_path = await self.telegram.file_url(telegram_file_id)
+                    # Keep the message id in the mirror URL while retaining a
+                    # directly downloadable Telegram file URL for backfill.
+                    telegram_file_path = (
+                        f"{telegram_file_path}&message_id={telegram_message_id}"
+                        if "?" in telegram_file_path
+                        else f"{telegram_file_path}?message_id={telegram_message_id}"
+                    )
+                    await set_mirror(
+                        'track', str(track_id), 'audioUrl', telegram_file_path,
+                        quality=quality_value, source="telegram")
+                    await self.api_client.save_messenger_file(
+                        "telegram", str(track_id), telegram_file_id,
+                        str(telegram_message_id), quality_value,
+                        os.path.basename(mp3_path), telegram_file_path)
+        except Exception as e:
+            logger.error(f"Messenger upload failed: {e}")
+            raise
 
-                            mp3_192_retry_path = mp3_path.replace(".mp3", "_retry_192.mp3")
-                            if convert_bitrate(Path(mp3_path), Path(mp3_192_retry_path), "192"):
-                                self.tagging_service.tag_mp3(Path(mp3_192_retry_path), track, cover_bytes, lyrics=lyrics_to_tag)
-                                with open(mp3_192_retry_path, 'rb') as f_retry:
-                                    msg = await self.bot.send_audio(
-                                        chat_id, audio=f_retry, title=title, duration=duration_sec
-                                    )
-                                    quality_value = "192" # Update quality for logging and mirroring
-                            else:
-                                raise e
-                        else:
-                            raise e
+        try:
+            other_quality = "192" if str(quality_value) == "320" else "320"
+            if other_quality == "192" and duration_sec is not None and duration_sec > 480:
+                converted_path = mp3_path.replace(".mp3", f"_{other_quality}.mp3")
+                if convert_bitrate(Path(mp3_path), Path(converted_path), other_quality):
+                    self.tagging_service.tag_mp3(Path(converted_path), track, cover_bytes,
+                                                 lyrics=lyrics_to_tag)
+                    if not await get_cached_audio(track_id, quality=other_quality):
+                        with open(converted_path, "rb") as converted:
+                            converted_msg = await self.bot.send_audio(
+                                chat_id, audio=converted, title=title, duration=duration_sec)
+                        converted_file = getattr(getattr(converted_msg, "audio", None), "id", None)
+                        converted_message = getattr(converted_msg, "id", None)
+                        if converted_file and converted_message is not None:
+                            converted_mirror = f"bale:///{converted_message}"
+                            await set_mirror("track", str(track_id), "audioUrl",
+                                             converted_mirror, quality=other_quality, source="bale")
+                            await self.api_client.save_messenger_file(
+                                "bale", str(track_id), converted_file, str(converted_message),
+                                other_quality, os.path.basename(converted_path), converted_mirror)
 
-                    audio_file_id = getattr(getattr(msg, "audio", None), "id", None)
-                    if audio_file_id and track_id:
-                        mirror_res = await set_mirror('track', str(track_id), 'audioUrl',
-                                                     audio_file_id, quality=quality_value,
-                                                     source="bale")
-                        if not mirror_res or not mirror_res.get("success"):
-                            logger.error(f"Failed to set mirror for track {track_id} quality {quality_value} after retries")
-
-                # DUAL UPLOAD: Only send 192kbps in addition for audios longer than 8 minutes (480s)
-                other_quality = "192" if str(quality_value) == "320" else "320"
-                is_longer_than_8_min = duration_sec is not None and duration_sec > 480
-                if other_quality == "192" and is_longer_than_8_min:
-                    try:
-                        status_msg = await self._update_status(chat_id, status_msg, f"🔄 *در حال تبدیل به کیفیت {other_quality}kbps...*",
-                                                               status_prefix, is_batch, silent=silent)
-
-                        mp3_conv_path = mp3_path.replace(".mp3", f"_{other_quality}.mp3")
-                        if convert_bitrate(Path(mp3_path), Path(mp3_conv_path), other_quality):
-                            # Re-tag converted file
-                            self.tagging_service.tag_mp3(Path(mp3_conv_path), track, cover_bytes, lyrics=lyrics_to_tag)
-
-                            with open(mp3_conv_path, 'rb') as f_conv:
-                                logger.info(f"Uploading converted {other_quality}kbps audio: {track.get('trackName')}")
-
-                                msg_conv = await self.bot.send_audio(
-                                    chat_id, audio=f_conv, title=title, duration=duration_sec
-                                )
-                                converted_file_id = getattr(getattr(msg_conv, "audio", None), "id", None)
-                                if converted_file_id and track_id:
-                                    mirror_conv_res = await set_mirror('track', str(track_id), 'audioUrl',
-                                                                       converted_file_id,
-                                                                       quality=other_quality,
-                                                                       source="bale")
-                                    if not mirror_conv_res or not mirror_conv_res.get("success"):
-                                        logger.error(f"Failed to set mirror for converted track {track_id} quality {other_quality} after retries")
-                    except Exception as e:
-                        logger.error(f"Failed to perform dual quality upload for {other_quality}kbps: {e}")
-
-                file_size = os.path.getsize(mp3_path)
-                await self.api_client.log_download(user_id, str(track_id), track.get('trackName', ''),
-                                                   track.get('artistName', ''), track.get('collectionName', ''),
-                                                   file_size, 'youtube', quality_value)
-                await self.error_notifier.check_and_clear_if_resolved(self.bot, test_success=True)
-                if not is_batch: await safe_delete(status_msg)
-                return status_msg, True
+            file_size = os.path.getsize(mp3_path)
+            await self.api_client.log_download(user_id, str(track_id), track.get('trackName', ''),
+                                               track.get('artistName', ''), track.get('collectionName', ''),
+                                               file_size, 'telegram' if telegram_cache else 'youtube',
+                                               quality_value)
+            await self.error_notifier.check_and_clear_if_resolved(self.bot, test_success=True)
+            if not is_batch:
+                await safe_delete(status_msg)
+            return status_msg, True
         except Exception as e:
             logger.error(f"Download error: {e}")
             status_msg = await self._update_status(chat_id, status_msg, f"❌ خطا در دانلود {track.get('trackName', '')}",
@@ -269,4 +303,3 @@ class DownloadService:
 
 
 __all__ = ["DownloadService", "_is_file_too_large_error"]
-
