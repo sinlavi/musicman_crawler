@@ -8,28 +8,19 @@ class APIClient:
         self.token = token
 
     async def _post_json(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        session = await HttpClient.get_session()
-        headers = {
-            'Authorization': f'Bearer {self.token}',
-            'Authorization': 'Bearer ' + self.token,
-            'Content-Type': 'application/json'
-        }
-        try:
-            async with session.post(url, json=data, headers=headers) as resp:
-                status = resp.status
-                content_type = resp.headers.get('Content-Type', '')
-                if 'application/json' not in content_type.lower():
-                    body = await resp.text()
-                    logger.error(f"API returned HTTP {status} with non-JSON content: {body[:200]}")
-                    return {'success': False, 'status': status, 'message': 'Invalid API response'}
-                response = await resp.json()
-                if status >= 400:
-                    logger.error(f"API returned HTTP {status}: {response}")
-                return response if isinstance(response, dict) else {
-                    'success': False, 'status': status, 'message': 'Invalid API response'}
-        except Exception as e:
-            logger.error(f"API request failed: {e}")
-            return {'success': False, 'message': str(e)}
+        response, status, technical_error = await HttpClient.request_with_methods(
+            "POST", url, json=data,
+            headers={
+                'Authorization': 'Bearer ' + self.token,
+                'Content-Type': 'application/json',
+            })
+        if technical_error:
+            logger.error(f"API request failed: {url} (status={status})")
+            return {'success': False, 'status': status, 'message': 'API request failed'}
+        if not isinstance(response, dict):
+            logger.error(f"API returned an invalid response: {url} (status={status})")
+            return {'success': False, 'status': status, 'message': 'Invalid API response'}
+        return response
 
     async def _request(self, action: str, data: Dict[str, Any]) -> Dict[str, Any]:
         return await self._post_json(f"{self.base_url}?action={action}", data)
