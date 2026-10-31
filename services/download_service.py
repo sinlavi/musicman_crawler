@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional, Union, List
 from core.logger import logger
 from core.config import OFFLINE_MODE, DEFAULT_QUALITY
@@ -33,6 +34,30 @@ class DownloadService:
         self.error_notifier = error_notifier
         self.download_semaphore = asyncio.Semaphore(100)
         self.telegram = TelegramUploadService()
+
+    async def _send_bale_audio(self, chat_id, path: str, title: str,
+                               duration: Optional[int], performer: str,
+                               artwork: Optional[bytes] = None):
+        """Send audio with metadata omitted by Balethon's high-level wrapper."""
+        resolved_chat_id = await self.bot.resolve_peer_id(chat_id)
+        with open(path, "rb") as audio:
+            payload = {
+                "chat_id": resolved_chat_id,
+                "audio": audio,
+                "title": title,
+                "duration": duration,
+                "performer": performer,
+                "thumb": artwork,
+            }
+            result = await self.bot.execute("post", "sendAudio", **payload)
+            if isinstance(result, dict):
+                audio_data = result.get("audio") or result.get("document") or {}
+                audio = SimpleNamespace(**audio_data) if isinstance(audio_data, dict) else audio_data
+                return SimpleNamespace(
+                    id=result.get("message_id", result.get("id")),
+                    audio=audio,
+                )
+            return result
 
     async def _update_status(self, chat_id, status_msg, text, status_prefix="", is_batch=False, silent=False):
         if silent:
@@ -89,6 +114,14 @@ class DownloadService:
         duration_ms = int(track.get('trackTimeMillis') or 0)
         duration_sec = duration_ms // 1000 if duration_ms > 0 else None
         title = track.get('trackName')
+        artist_name = track.get('artistName') or ""
+        cover_bytes = album_cover_bytes
+        if cover_bytes is None:
+            cover_bytes = await self.artwork_service.get_artwork_bytes(
+                track.get('collectionId') or track_id,
+                track.get('artworkUrl100'),
+                track_name=title,
+                artist_name=artist_name)
         # Check cache
         audio_cache = await get_cached_audio(track_id, quality=quality_value)
         telegram_cache = None
@@ -136,17 +169,6 @@ class DownloadService:
             return status_msg, False
 
         # Download from Telegram when available, otherwise download from YouTube.
-        cover_bytes = album_cover_bytes
-        # show_artwork is now effectively always True as settings are removed
-        if cover_bytes is None and not telegram_cache:
-            status_msg = await self._update_status(chat_id, status_msg, "🖼️ *در حال دریافت کاور آهنگ...*",
-                                                   status_prefix, is_batch, silent=silent)
-
-            cover_bytes = await self.artwork_service.get_artwork_bytes(track.get('collectionId') or track_id,
-                                                                       track.get('artworkUrl100'),
-                                                                       track_name=track.get('trackName'),
-                                                                       artist_name=track.get('artistName'))
-
         if telegram_cache:
             temp_dir = tempfile.mkdtemp(prefix="musicman-telegram-")
             mp3_path = os.path.join(temp_dir, f"{track_id}_{quality_value}.mp3")
@@ -204,9 +226,9 @@ class DownloadService:
                                                status_prefix, is_batch, silent=silent)
         try:
             try:
-                with open(mp3_path, 'rb') as f:
-                    logger.info(f"Uploading Bale audio: {track.get('trackName')} ({quality_value}kbps)")
-                    msg = await self.bot.send_audio(chat_id, audio=f, title=title, duration=duration_sec)
+                logger.info(f"Uploading Bale audio: {track.get('trackName')} ({quality_value}kbps)")
+                msg = await self._send_bale_audio(
+                    chat_id, mp3_path, title, duration_sec, artist_name, cover_bytes)
             except Exception as upload_error:
                 if not (_is_file_too_large_error(upload_error) and str(quality_value) == "320"):
                     raise
@@ -215,16 +237,15 @@ class DownloadService:
                     raise upload_error
                 self.tagging_service.tag_mp3(Path(retry_path), track, cover_bytes,
                                              lyrics=lyrics_to_tag)
-                with open(retry_path, "rb") as f:
-                    msg = await self.bot.send_audio(
-                        chat_id, audio=f, title=title, duration=duration_sec)
+                msg = await self._send_bale_audio(
+                    chat_id, retry_path, title, duration_sec, artist_name, cover_bytes)
                 mp3_path = retry_path
                 quality_value = "192"
             bale_file_id = getattr(getattr(msg, "audio", None), "id", None)
             bale_message_id = getattr(msg, "id", None) or getattr(msg, "message_id", None)
             if not bale_file_id or bale_message_id is None:
                 raise RuntimeError("Bale upload returned no file or message id")
-            bale_mirror = f"bale:///{bale_message_id}"
+            bale_mirror = f"bale://{bale_message_id}"
             await set_mirror('track', str(track_id), 'audioUrl', bale_mirror,
                              quality=quality_value, source="bale")
             await self.api_client.save_messenger_file(
@@ -237,22 +258,23 @@ class DownloadService:
                 if not telegram_mirror:
                     with open(mp3_path, "rb") as f:
                         telegram_message = await self.telegram.upload_audio(
-                            mp3_path, title, duration_sec)
+                            mp3_path, title, duration_sec, performer=artist_name,
+                            artwork=cover_bytes)
                     telegram_audio = telegram_message.get("audio") or {}
                     telegram_file_id = telegram_audio.get("file_id")
                     telegram_message_id = telegram_message.get("message_id")
                     if not telegram_file_id or telegram_message_id is None:
                         raise RuntimeError("Telegram upload returned no file or message id")
+                    # The API mirror is the stable platform/message reference.
+                    # Keep the resolved file URL only in the messenger-file
+                    # record because Telegram requires file_path for downloads.
                     telegram_file_path = await self.telegram.file_url(telegram_file_id)
-                    # Keep the message id in the mirror URL while retaining a
-                    # directly downloadable Telegram file URL for backfill.
-                    telegram_file_path = (
-                        f"{telegram_file_path}&message_id={telegram_message_id}"
-                        if "?" in telegram_file_path
-                        else f"{telegram_file_path}?message_id={telegram_message_id}"
+                    telegram_mirror = (
+                        f"https://api.telegram.org/file/bot"
+                        f"{self.telegram.token}/{telegram_message_id}"
                     )
                     await set_mirror(
-                        'track', str(track_id), 'audioUrl', telegram_file_path,
+                        'track', str(track_id), 'audioUrl', telegram_mirror,
                         quality=quality_value, source="telegram")
                     await self.api_client.save_messenger_file(
                         "telegram", str(track_id), telegram_file_id,
@@ -270,13 +292,13 @@ class DownloadService:
                     self.tagging_service.tag_mp3(Path(converted_path), track, cover_bytes,
                                                  lyrics=lyrics_to_tag)
                     if not await get_cached_audio(track_id, quality=other_quality):
-                        with open(converted_path, "rb") as converted:
-                            converted_msg = await self.bot.send_audio(
-                                chat_id, audio=converted, title=title, duration=duration_sec)
+                        converted_msg = await self._send_bale_audio(
+                            chat_id, converted_path, title, duration_sec,
+                            artist_name, cover_bytes)
                         converted_file = getattr(getattr(converted_msg, "audio", None), "id", None)
                         converted_message = getattr(converted_msg, "id", None)
                         if converted_file and converted_message is not None:
-                            converted_mirror = f"bale:///{converted_message}"
+                            converted_mirror = f"bale://{converted_message}"
                             await set_mirror("track", str(track_id), "audioUrl",
                                              converted_mirror, quality=other_quality, source="bale")
                             await self.api_client.save_messenger_file(

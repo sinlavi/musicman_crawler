@@ -47,6 +47,23 @@ class TestSetMirrorRetry(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(mock_sleep.call_count, 2)
             mock_lookup.assert_not_called()
 
+    async def test_duplicate_mirror_is_treated_as_success(self):
+        with patch("crawlers.itunes.fetch_itunes", new_callable=AsyncMock) as mock_fetch, \
+             patch("crawlers.itunes.lookup_itunes", new_callable=AsyncMock) as mock_lookup:
+            mock_fetch.return_value = {
+                "success": False,
+                "error": "Duplicate mirror already exists",
+            }
+
+            res = await set_mirror("track", 12345, "audioUrl", "http://test_url",
+                                   quality="192", max_retries=3)
+
+            self.assertTrue(res["success"])
+            self.assertTrue(res["duplicate"])
+            mock_fetch.assert_awaited_once()
+            mock_lookup.assert_awaited_once_with(
+                12345, entity="track", bypass_cache=True, quality="192")
+
 
 if __name__ == '__main__':
     unittest.main()
