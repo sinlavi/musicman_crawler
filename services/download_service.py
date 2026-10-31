@@ -153,7 +153,8 @@ class DownloadService:
         telegram_cache = None
         if self.telegram.enabled:
             telegram_cache = await get_cached_audio(
-                track_id, quality=quality_value, source="telegram")
+                track_id, quality=quality_value, source="telegram",
+                api_client=self.api_client)
         if audio_cache:
             logger.info(f"Using cached audio for track {track_id} (quality: {quality_value}) -> {audio_cache}")
             # A completed dual-platform cache hit must already contain both

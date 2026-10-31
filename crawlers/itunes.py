@@ -22,6 +22,15 @@ def _is_unresolved_telegram_url(url: str) -> bool:
     ))
 
 
+def _telegram_message_id(url: str) -> Optional[str]:
+    match = re.search(
+        r"^https://api\.telegram\.org/file/bot[^/]+/(\d+)$",
+        str(url),
+        flags=re.IGNORECASE,
+    )
+    return match.group(1) if match else None
+
+
 class iTunesSQLiteCache:
     def __init__(self, db_path: str = "cache/itunes_cache.db", ttl_seconds: int = 4 * 3600):
         self.db_path = db_path
@@ -206,7 +215,7 @@ async def get_attachments(entity_type: str, entity_id: Union[int, str], quality:
 
 
 async def get_cached_audio(track_id: Union[int, str], quality: str = None,
-                           source: str = "bale") -> Optional[str]:
+                           source: str = "bale", api_client=None) -> Optional[str]:
     attachments = await get_attachments('track', track_id, quality=quality or "192")
     if attachments and attachments.get('audioUrls'):
         for audio in attachments['audioUrls']:
@@ -221,7 +230,14 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
                 file_id = audio.get("telegramFileId")
                 if file_id:
                     try:
-                        return await TelegramUploadService().file_url(str(file_id))
+                        telegram = TelegramUploadService()
+                        info = await telegram.file_info(str(file_id))
+                        if api_client and audio.get("telegramMessageId"):
+                            await api_client.save_messenger_file(
+                                "telegram", str(track_id), info["file_id"],
+                                str(audio["telegramMessageId"]), str(quality or "192"),
+                                str(audio.get("telegramFilename") or ""), info["file_path"])
+                        return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{info['file_path']}"
                     except RuntimeError as error:
                         logger.warning(
                             f"Unable to resolve Telegram file for {track_id}: {error}")
@@ -230,15 +246,43 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
                         # mirror and turn it into repeated HTTP 404 failures.
                         if _is_unresolved_telegram_url(
                                 str(audio.get("telegramFileUrl") or audio.get("url") or "")):
-                            continue
+                            message_id = _telegram_message_id(
+                                str(audio.get("telegramFileUrl") or audio.get("url") or ""))
+                            if message_id:
+                                try:
+                                    telegram = TelegramUploadService()
+                                    info = await telegram.file_info_from_message_id(message_id)
+                                    if api_client:
+                                        await api_client.save_messenger_file(
+                                            "telegram", str(track_id), info["file_id"],
+                                            message_id, str(quality or "192"),
+                                            str(audio.get("telegramFilename") or ""), info["file_path"])
+                                    return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{info['file_path']}"
+                                except RuntimeError as resolve_error:
+                                    logger.warning(
+                                        f"Unable to resolve Telegram message {message_id} "
+                                        f"for {track_id}: {resolve_error}")
                 file_path = audio.get("telegramFilePath")
                 if file_path:
                     return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
             url = audio.get("telegramFileUrl") or audio.get('url')
             if url:
                 if source.lower() == "telegram" and _is_unresolved_telegram_url(str(url)):
-                    logger.warning(
-                        f"Skipping unresolved Telegram mirror for {track_id}: {url}")
+                    message_id = _telegram_message_id(str(url))
+                    if message_id:
+                        try:
+                            telegram = TelegramUploadService()
+                            info = await telegram.file_info_from_message_id(message_id)
+                            if api_client:
+                                await api_client.save_messenger_file(
+                                    "telegram", str(track_id), info["file_id"],
+                                    message_id, str(quality or "192"),
+                                    str(audio.get("telegramFilename") or ""), info["file_path"])
+                            return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{info['file_path']}"
+                        except RuntimeError as resolve_error:
+                            logger.warning(
+                                f"Unable to resolve Telegram message {message_id} "
+                                f"for {track_id}: {resolve_error}")
                     continue
                 logger.info(f"Cached audio found for {track_id}: {url}")
                 return url

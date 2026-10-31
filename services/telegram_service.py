@@ -74,11 +74,47 @@ class TelegramUploadService:
         return None
 
     async def file_url(self, file_id: str) -> str:
+        file = await self.file_info(file_id)
+        return f"https://api.telegram.org/file/bot{self.token}/{file['file_path']}"
+
+    async def file_info(self, file_id: str) -> dict:
         file = await self._request("getFile", {"file_id": file_id})
         file_path = file.get("file_path")
         if not file_path:
             raise RuntimeError("Telegram getFile returned no file_path")
-        return f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+        return {"file_id": file_id, "file_path": file_path}
+
+    async def file_info_from_message_id(self, message_id: str) -> dict:
+        if not self.chat_id:
+            raise RuntimeError("TELEGRAM_CHAT_ID is not configured")
+        forwarded = await self._request("forwardMessage", {
+            "chat_id": str(self.chat_id),
+            "from_chat_id": str(self.chat_id),
+            "message_id": str(message_id),
+        })
+        media = forwarded.get("audio") or forwarded.get("document")
+        file_id = media.get("file_id") if isinstance(media, dict) else None
+        if not file_id:
+            raise RuntimeError(
+                f"Telegram message {message_id} does not contain audio or document")
+        try:
+            info = await self.file_info(file_id)
+            info["message_id"] = str(message_id)
+            return info
+        finally:
+            forwarded_id = forwarded.get("message_id")
+            if forwarded_id is not None:
+                try:
+                    await self._request("deleteMessage", {
+                        "chat_id": str(self.chat_id),
+                        "message_id": str(forwarded_id),
+                    })
+                except RuntimeError:
+                    pass
+
+    async def file_url_from_message_id(self, message_id: str) -> str:
+        info = await self.file_info_from_message_id(message_id)
+        return f"https://api.telegram.org/file/bot{self.token}/{info['file_path']}"
 
     async def download(self, url: str, destination: Path) -> None:
         async with aiohttp.ClientSession() as session:
