@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 from services.download_service import DownloadService, _bale_upload_ids
+from services.telegram_service import TelegramUploadService
 
 
 class TestBaleUploadResponse(unittest.TestCase):
@@ -24,6 +25,24 @@ class TestBaleUploadResponse(unittest.TestCase):
             "result": {"id": 43, "document": {"id": "audio-43"}}
         })
         self.assertEqual((file_id, message_id), ("audio-43", 43))
+
+
+class TestTelegramThumbnail(unittest.TestCase):
+
+    def test_thumbnail_is_jpeg_and_within_bot_limit(self):
+        from io import BytesIO
+        from PIL import Image
+
+        source = BytesIO()
+        Image.new("RGBA", (1200, 900), (20, 40, 80, 255)).save(source, format="PNG")
+
+        thumbnail = TelegramUploadService._prepare_thumbnail(source.getvalue())
+
+        self.assertIsNotNone(thumbnail)
+        self.assertLessEqual(len(thumbnail), 200 * 1024)
+        with Image.open(BytesIO(thumbnail)) as image:
+            self.assertEqual(image.format, "JPEG")
+            self.assertLessEqual(max(image.size), 320)
 
 class TestDualUploadCondition(unittest.TestCase):
 

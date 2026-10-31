@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 import aiohttp
+from PIL import Image
 
 from core.config import PROXY, TELEGRAM_CHAT_ID, TELEGRAM_TOKEN
 
@@ -43,13 +44,34 @@ class TelegramUploadService:
             form.add_field("performer", performer)
         if duration is not None:
             form.add_field("duration", str(duration))
-        if artwork:
-            form.add_field("thumb", BytesIO(artwork), filename="cover.jpg",
+        thumbnail = self._prepare_thumbnail(artwork)
+        if thumbnail:
+            form.add_field("thumb", BytesIO(thumbnail), filename="cover.jpg",
                            content_type="image/jpeg")
         with open(path, "rb") as audio:
             form.add_field("audio", audio, filename=os.path.basename(path),
                            content_type="audio/mpeg")
             return await self._request("sendAudio", form=form)
+
+    @staticmethod
+    def _prepare_thumbnail(artwork: Optional[bytes]) -> Optional[bytes]:
+        if not artwork:
+            return None
+        try:
+            with Image.open(BytesIO(artwork)) as image:
+                image = image.convert("RGB")
+                image.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                quality = 85
+                while quality >= 40:
+                    output = BytesIO()
+                    image.save(output, format="JPEG", quality=quality, optimize=True)
+                    thumbnail = output.getvalue()
+                    if len(thumbnail) <= 200 * 1024:
+                        return thumbnail
+                    quality -= 10
+        except (OSError, ValueError):
+            return None
+        return None
 
     async def file_url(self, file_id: str) -> str:
         file = await self._request("getFile", {"file_id": file_id})
