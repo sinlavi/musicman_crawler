@@ -1,4 +1,5 @@
 import os
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
@@ -30,14 +31,21 @@ class TelegramUploadService:
                     raise RuntimeError(f"Telegram {method} failed: {payload}")
                 return payload["result"]
 
-    async def upload_audio(self, path: str, title: str, duration: Optional[int]) -> dict:
+    async def upload_audio(self, path: str, title: str, duration: Optional[int],
+                           performer: Optional[str] = None,
+                           artwork: Optional[bytes] = None) -> dict:
         if not self.enabled:
             raise RuntimeError("Telegram upload is not configured")
         form = aiohttp.FormData()
         form.add_field("chat_id", str(self.chat_id))
         form.add_field("title", title)
+        if performer:
+            form.add_field("performer", performer)
         if duration is not None:
             form.add_field("duration", str(duration))
+        if artwork:
+            form.add_field("thumb", BytesIO(artwork), filename="cover.jpg",
+                           content_type="image/jpeg")
         with open(path, "rb") as audio:
             form.add_field("audio", audio, filename=os.path.basename(path),
                            content_type="audio/mpeg")

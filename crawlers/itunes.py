@@ -162,6 +162,10 @@ async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str
                 logger.info(f"Mirror set successful for {entity_id} ({url_type}, quality: {quality}), refreshing cache...")
                 await lookup_itunes(entity_id, entity=entity_type, bypass_cache=True, quality=quality)
                 return result
+            if result and str(result.get("error", "")).lower() == "duplicate mirror already exists":
+                logger.info(f"Mirror already exists for {entity_id} ({url_type}, quality: {quality}); treating as success")
+                await lookup_itunes(entity_id, entity=entity_type, bypass_cache=True, quality=quality)
+                return {**result, "success": True, "duplicate": True}
             logger.warning(f"set_mirror attempt {attempt}/{max_retries} failed for {entity_id}: {result}")
         except Exception as e:
             logger.warning(f"set_mirror attempt {attempt}/{max_retries} exception for {entity_id}: {e}")
