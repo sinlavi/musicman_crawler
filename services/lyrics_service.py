@@ -75,19 +75,27 @@ class LyricsService:
             from core.http_client import HttpClient
 
             async def lrclib_request(url, request_params):
-                headers = {}
+                headers = {
+                    "Accept": "application/json",
+                    "User-Agent": (
+                        "MusicMan Crawler/1.0 "
+                        "(https://github.com/sinlavi/musicman_crawler)"
+                    ),
+                }
                 if LRCLIB_APP_ID:
                     headers["Lrclib-App-Id"] = LRCLIB_APP_ID
                 if LRCLIB_API_KEY:
                     headers["Lrclib-Api-Key"] = LRCLIB_API_KEY
                 data, status, technical_error = await HttpClient.request_with_methods(
-                    "GET", url, use_proxy=False, params=request_params, headers=headers)
+                    "GET", url, use_proxy=False, max_attempts=1,
+                    params=request_params, headers=headers)
                 if technical_error or status >= 500:
                     logger.warning(
                         "LRCLIB direct request failed (status %s); retrying with proxy",
                         status)
                     return await HttpClient.request_with_methods(
-                        "GET", url, use_proxy=True, params=request_params, headers=headers)
+                        "GET", url, use_proxy=True, max_attempts=1,
+                        params=request_params, headers=headers)
                 return data, status, technical_error
 
             # 1. Try exact match with duration (best for accuracy)

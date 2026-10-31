@@ -38,6 +38,7 @@ class TestLyricsPlaceholder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_request.call_count, 2)
         self.assertFalse(mock_request.call_args_list[0].kwargs["use_proxy"])
         self.assertTrue(mock_request.call_args_list[1].kwargs["use_proxy"])
+        self.assertEqual(mock_request.call_args_list[0].kwargs["max_attempts"], 1)
 
     @patch.object(HttpClient, 'request_with_methods')
     async def test_lrclib_sends_registered_client_headers(self, mock_request):
@@ -52,6 +53,8 @@ class TestLyricsPlaceholder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lyrics["plain"], "lyrics")
         headers = mock_request.call_args.kwargs["headers"]
         self.assertEqual(headers, {
+            "Accept": "application/json",
+            "User-Agent": "MusicMan Crawler/1.0 (https://github.com/sinlavi/musicman_crawler)",
             "Lrclib-App-Id": "app-id",
             "Lrclib-Api-Key": "api-key",
         })

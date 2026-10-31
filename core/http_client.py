@@ -40,7 +40,9 @@ class HttpClient:
 
     @classmethod
     async def request_with_methods(cls, method: str, url: str, *,
-                                   use_proxy: bool = True, **kwargs) -> Tuple[Any, int, bool]:
+                                   use_proxy: bool = True,
+                                   max_attempts: Optional[int] = None,
+                                   **kwargs) -> Tuple[Any, int, bool]:
         """
         Executes a request using multiple methods (different User-Agents and toggling proxy).
         Returns (data, status_code, is_technical_error).
@@ -52,10 +54,10 @@ class HttpClient:
         uas = list(USER_AGENTS)
         random.shuffle(uas)
 
-        attempts = max(len(uas) * 3, 6)
+        attempts = max_attempts or max(len(uas) * 3, 6)
         for i in range(attempts):
             ua = uas[i % len(uas)]
-            headers['User-Agent'] = ua
+            headers['User-Agent'] = headers.get('User-Agent') or ua
             # API callers can force direct transport; other callers retain proxy fallback.
             attempt_proxy = use_proxy and PROXY and i % 2 == 0
             session = await cls.get_session(use_proxy=bool(attempt_proxy))
