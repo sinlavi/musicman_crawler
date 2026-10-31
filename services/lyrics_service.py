@@ -74,13 +74,24 @@ class LyricsService:
         try:
             from core.http_client import HttpClient
 
+            async def lrclib_request(url, request_params):
+                data, status, technical_error = await HttpClient.request_with_methods(
+                    "GET", url, use_proxy=False, params=request_params)
+                if technical_error or status >= 500:
+                    logger.warning(
+                        "LRCLIB direct request failed (status %s); retrying with proxy",
+                        status)
+                    return await HttpClient.request_with_methods(
+                        "GET", url, use_proxy=True, params=request_params)
+                return data, status, technical_error
+
             # 1. Try exact match with duration (best for accuracy)
             params = {"track_name": title, "artist_name": artist}
             if album: params["album_name"] = album
             if duration_ms: params["duration"] = int(duration_ms / 1000)
 
             url = "https://lrclib.net/api/get"
-            data, status, is_tech_err = await HttpClient.request_with_methods("GET", url, params=params)
+            data, status, is_tech_err = await lrclib_request(url, params)
 
             if status == 200 and data:
                 if data.get("instrumental"):
@@ -99,7 +110,7 @@ class LyricsService:
             search_params = {"track_name": title, "artist_name": artist}
             if album: search_params["album_name"] = album
 
-            data, status, is_tech_err = await HttpClient.request_with_methods("GET", search_url, params=search_params)
+            data, status, is_tech_err = await lrclib_request(search_url, search_params)
 
             results = data if status == 200 and data else []
             if is_tech_err:
@@ -114,7 +125,7 @@ class LyricsService:
             if not results and album:
                 logger.info(f"LRCLIB search with album failed, trying without album: {title} - {artist}")
                 no_album_params = {"track_name": title, "artist_name": artist}
-                data, status, is_tech_err = await HttpClient.request_with_methods("GET", search_url, params=no_album_params)
+                data, status, is_tech_err = await lrclib_request(search_url, no_album_params)
                 results = data if status == 200 and data else []
                 if is_tech_err:
                     if status >= 500:
@@ -129,7 +140,7 @@ class LyricsService:
             # Fallback 2: General q search
             if not results:
                 general_params = {"q": f"{title} {artist}"}
-                data, status, is_tech_err = await HttpClient.request_with_methods("GET", search_url, params=general_params)
+                data, status, is_tech_err = await lrclib_request(search_url, general_params)
                 results = data if status == 200 and data else []
                 if is_tech_err:
                     if status >= 500:
