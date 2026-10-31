@@ -28,7 +28,7 @@ jobs:
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       API_TOKEN: ${{ secrets.API_TOKEN }}
-      PROXY: ${{ secrets.PROXY }}
+      PROXY: socks5h://127.0.0.1:1080
       OFFLINE_MODE: ${{ secrets.OFFLINE_MODE }}
       INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
       INSTANCE_ID: ${{ matrix.instance }}
@@ -40,6 +40,54 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      - name: Cache WARP Docker image
+        id: cache-warp
+        uses: actions/cache@v4
+        with:
+          path: /tmp/warp-image.tar
+          key: warp-image-caomingjun-warp-${{ runner.os }}-v1
+          restore-keys: |
+            warp-image-caomingjun-warp-${{ runner.os }}-
+
+      - name: Load cached WARP image
+        if: steps.cache-warp.outputs.cache-hit == 'true'
+        run: docker load --input /tmp/warp-image.tar
+
+      - name: Pull and cache WARP image
+        if: steps.cache-warp.outputs.cache-hit != 'true'
+        run: |
+          docker pull caomingjun/warp
+          docker save caomingjun/warp --output /tmp/warp-image.tar
+
+      - name: Start Cloudflare WARP proxy
+        run: |
+          docker rm -f warp 2>/dev/null || true
+          docker volume rm warp-data 2>/dev/null || true
+          docker network inspect warp-net >/dev/null 2>&1 || docker network create warp-net
+          docker run -d \
+            --name warp \
+            --restart=always \
+            --network warp-net \
+            -p 1080:1080 \
+            --cap-add NET_ADMIN \
+            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+            --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+            -v warp-data:/var/lib/cloudflare-warp \
+            caomingjun/warp
+          for attempt in {1..30}; do
+            if curl -x socks5h://127.0.0.1:1080 \
+              https://cloudflare.com/cdn-cgi/trace --max-time 5 --silent |
+              grep -q "warp=on"; then
+              echo "WARP proxy is ready"
+              break
+            fi
+            echo "Waiting for WARP ($attempt/30)"
+            sleep 5
+          done
+          curl -x socks5h://127.0.0.1:1080 \
+            https://cloudflare.com/cdn-cgi/trace --max-time 10 --silent |
+            grep -E "^(ip|warp)=" || true
 
       - name: Set up Python
         uses: actions/setup-python@v5
