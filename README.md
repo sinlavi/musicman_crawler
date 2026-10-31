@@ -126,13 +126,16 @@ Required for every worker:
 Optional:
 
 - `INFO_CHANNEL_ID`: Bale chat for error notifications.
-- `proxy`: proxy URL for messenger/API/YouTube traffic.
+- `PROXY`: proxy URL for messenger/API/YouTube traffic.
 - `OFFLINE_MODE`: set to `True` only for local offline testing.
 - `API_TOKEN`: API authentication token, if enabled by the server.
 
 The Telegram bot must be an administrator of the target channel/group with permission
 to post audio. GitHub repository secrets are configured under **Settings → Secrets and
 variables → Actions**.
+
+The workflow maps these GitHub Secrets into environment variables before starting
+Python. The application cannot read GitHub Secrets directly.
 
 ### 4. Running the Crawler
 
