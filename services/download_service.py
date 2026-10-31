@@ -49,6 +49,10 @@ def _bale_upload_ids(response):
     return file_id, message_id
 
 
+def _telegram_mirror_url(message_id: object) -> str:
+    return f"https://api.telegram.org/file/bot<token>/{message_id}"
+
+
 class DownloadService:
     def __init__(self, bot, api_client, artwork_service,
                  tagging_service, error_notifier):
@@ -295,10 +299,7 @@ class DownloadService:
                             "Telegram getFile cannot resolve file %s because it exceeds "
                             "the Bot API download limit; keeping the uploaded mirror",
                             telegram_file_id)
-                    telegram_mirror = (
-                        f"https://api.telegram.org/file/bot"
-                        f"{self.telegram.token}/{telegram_message_id}"
-                    )
+                    telegram_mirror = _telegram_mirror_url(telegram_message_id)
                     await set_mirror(
                         'track', str(track_id), 'audioUrl', telegram_mirror,
                         quality=quality_value, source="telegram")

@@ -3,6 +3,7 @@ import json
 import hashlib
 import time
 import random
+import re
 from typing import Optional, Dict, Any, Literal, List, Union, Tuple
 from pathlib import Path
 import aiosqlite
@@ -10,6 +11,7 @@ import aiosqlite
 from core.config import ITUNES_BASE_URL, OFFLINE_MODE, PROXY, API_TOKEN, TELEGRAM_TOKEN
 from core.logger import logger
 from core.http_client import HttpClient
+from services.telegram_service import TelegramUploadService
 
 
 class iTunesSQLiteCache:
@@ -150,6 +152,13 @@ async def lookup_itunes(id: Union[int, str], entity: Optional[str] = None, bypas
 async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str, mirror_url: str,
                      quality: str = None, max_retries: int = 5,
                      source: str = None) -> Optional[Dict[str, Any]]:
+    if source and source.lower() == "telegram":
+        mirror_url = re.sub(
+            r"(https://api\.telegram\.org/file/bot)[^/]+(/)",
+            r"\1<token>\2",
+            mirror_url,
+            flags=re.IGNORECASE,
+        )
     payload = {"entityType": entity_type, "entityId": str(entity_id), "urlType": url_type, "mirrorUrl": mirror_url}
     if quality: payload["quality"] = quality
     if source: payload["source"] = source
@@ -193,16 +202,28 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
     attachments = await get_attachments('track', track_id, quality=quality or "192")
     if attachments and attachments.get('audioUrls'):
         for audio in attachments['audioUrls']:
-            if (str(audio.get('quality')) == str(quality or "192")
-                    and str(audio.get('source', '')).lower() == source.lower()):
-                if source.lower() == "telegram":
-                    file_path = audio.get("telegramFilePath")
-                    if file_path and TELEGRAM_TOKEN:
-                        return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
-                url = audio.get('url')
-                if url:
-                    logger.info(f"Cached audio found for {track_id}: {url}")
-                    return url
+            audio_source = str(audio.get('source', '')).lower()
+            telegram_metadata = any(audio.get(key) for key in (
+                "telegramFilePath", "telegramFileId", "telegramFileUrl"))
+            if (str(audio.get('quality')) != str(quality or "192")
+                    or (audio_source != source.lower()
+                        and not (source.lower() == "telegram" and telegram_metadata))):
+                continue
+            if source.lower() == "telegram" and TELEGRAM_TOKEN:
+                file_path = audio.get("telegramFilePath")
+                if file_path:
+                    return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
+                file_id = audio.get("telegramFileId")
+                if file_id:
+                    try:
+                        return await TelegramUploadService().file_url(str(file_id))
+                    except RuntimeError as error:
+                        logger.warning(
+                            f"Unable to resolve Telegram file for {track_id}: {error}")
+            url = audio.get("telegramFileUrl") or audio.get('url')
+            if url:
+                logger.info(f"Cached audio found for {track_id}: {url}")
+                return url
     logger.info(f"No cached audio for {track_id} with quality {quality or '192'}")
     return None
 

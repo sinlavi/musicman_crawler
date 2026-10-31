@@ -7,7 +7,7 @@ import pytest
 import unittest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
-from services.download_service import DownloadService, _bale_upload_ids
+from services.download_service import DownloadService, _bale_upload_ids, _telegram_mirror_url
 from services.telegram_service import TelegramUploadService
 
 
@@ -43,6 +43,11 @@ class TestTelegramThumbnail(unittest.TestCase):
         with Image.open(BytesIO(thumbnail)) as image:
             self.assertEqual(image.format, "JPEG")
             self.assertLessEqual(max(image.size), 320)
+
+    def test_telegram_mirror_does_not_store_bot_token(self):
+        self.assertEqual(
+            _telegram_mirror_url(77217),
+            "https://api.telegram.org/file/bot<token>/77217")
 
 class TestDualUploadCondition(unittest.TestCase):
 
