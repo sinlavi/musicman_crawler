@@ -101,9 +101,9 @@ TELEGRAM_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_telegram_channel_id
 
 # API & Instance Settings
-API_BASE_URL=https://3rah.ir/mm/api
+API_BASE_URL=https://mm.3rah.ir/api
 API_TOKEN=your_secure_api_token
-ITUNES_BASE_URL=https://3rah.ir/mm/api
+ITUNES_BASE_URL=https://mm.3rah.ir/api
 
 # Sharding & Scaling
 INSTANCE_ID=1
