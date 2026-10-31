@@ -10,6 +10,7 @@ class APIClient:
     async def _post_json(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
         response, status, technical_error = await HttpClient.request_with_methods(
             "POST", url, json=data,
+            use_proxy=False,
             headers={
                 'Authorization': 'Bearer ' + self.token,
                 'Content-Type': 'application/json',
@@ -28,6 +29,7 @@ class APIClient:
     async def _post_path_json(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
         response, status, technical_error = await HttpClient.request_with_methods(
             "POST", url, json=data,
+            use_proxy=False,
             headers={
                 'Authorization': 'Bearer ' + self.token,
                 'Content-Type': 'application/json',

@@ -28,7 +28,7 @@ class HttpClient:
         else:
             if cls._direct_session is None or cls._direct_session.closed:
                 connector = aiohttp.TCPConnector(ssl=False)
-                cls._direct_session = aiohttp.ClientSession(connector=connector, trust_env=True)
+                cls._direct_session = aiohttp.ClientSession(connector=connector, trust_env=False)
             return cls._direct_session
 
     @classmethod
@@ -39,7 +39,8 @@ class HttpClient:
             await cls._direct_session.close()
 
     @classmethod
-    async def request_with_methods(cls, method: str, url: str, **kwargs) -> Tuple[Any, int, bool]:
+    async def request_with_methods(cls, method: str, url: str, *,
+                                   use_proxy: bool = True, **kwargs) -> Tuple[Any, int, bool]:
         """
         Executes a request using multiple methods (different User-Agents and toggling proxy).
         Returns (data, status_code, is_technical_error).
@@ -55,13 +56,13 @@ class HttpClient:
         for i in range(attempts):
             ua = uas[i % len(uas)]
             headers['User-Agent'] = ua
-            # Toggle proxy: even attempts use proxy (if available), odd attempts direct
-            use_proxy = (i % 2 == 0) if PROXY else False
-            session = await cls.get_session(use_proxy=use_proxy)
+            # API callers can force direct transport; other callers retain proxy fallback.
+            attempt_proxy = use_proxy and PROXY and i % 2 == 0
+            session = await cls.get_session(use_proxy=bool(attempt_proxy))
 
             # For HTTP proxies in direct session, we still might want to pass it?
             # No, if use_proxy is False we want direct.
-            current_proxy = PROXY if (use_proxy and PROXY and not PROXY.startswith("socks")) else None
+            current_proxy = PROXY if (attempt_proxy and not PROXY.startswith("socks")) else None
 
             try:
                 async with cls._request_semaphore:

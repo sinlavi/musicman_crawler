@@ -104,7 +104,7 @@ async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = 
 
     # Use multi-method request for better reliability
     data, status, is_tech_err = await HttpClient.request_with_methods(
-        method, url, params=params, json=payload, headers=headers
+        method, url, params=params, json=payload, headers=headers, use_proxy=False
     )
 
     if status == 200 and data:
