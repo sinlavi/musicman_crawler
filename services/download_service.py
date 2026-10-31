@@ -4,6 +4,7 @@ import asyncio
 import os
 import shutil
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from typing import Optional, Union, List
 from core.logger import logger
@@ -69,6 +70,7 @@ class DownloadService:
                                artwork: Optional[bytes] = None):
         """Send audio with metadata omitted by Balethon's high-level wrapper."""
         resolved_chat_id = await self.bot.resolve_peer_id(chat_id)
+        thumbnail = TelegramUploadService._prepare_thumbnail(artwork)
         with open(path, "rb") as audio:
             payload = {
                 "chat_id": resolved_chat_id,
@@ -76,8 +78,10 @@ class DownloadService:
                 "title": title,
                 "duration": duration,
                 "performer": performer,
-                "thumb": artwork,
             }
+            if thumbnail:
+                payload["thumb"] = BytesIO(thumbnail)
+                payload["thumb"].name = "cover.jpg"
             result = await self.bot.execute("post", "sendAudio", **payload)
             return result
 

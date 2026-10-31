@@ -49,6 +49,18 @@ class TestTelegramThumbnail(unittest.TestCase):
             _telegram_mirror_url(77217),
             "https://api.telegram.org/file/bot<token>/77217")
 
+    def test_bale_thumbnail_uses_prepared_jpeg(self):
+        from io import BytesIO
+        from PIL import Image
+
+        source = BytesIO()
+        Image.new("RGBA", (600, 400), (20, 40, 80, 255)).save(source, format="PNG")
+        thumbnail = TelegramUploadService._prepare_thumbnail(source.getvalue())
+
+        self.assertIsNotNone(thumbnail)
+        with Image.open(BytesIO(thumbnail)) as image:
+            self.assertEqual(image.format, "JPEG")
+
 class TestDualUploadCondition(unittest.TestCase):
 
     def test_download_service_dual_upload_condition(self):
