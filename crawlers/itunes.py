@@ -218,9 +218,6 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
                         and not (source.lower() == "telegram" and telegram_metadata))):
                 continue
             if source.lower() == "telegram" and TELEGRAM_TOKEN:
-                file_path = audio.get("telegramFilePath")
-                if file_path:
-                    return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
                 file_id = audio.get("telegramFileId")
                 if file_id:
                     try:
@@ -234,6 +231,9 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
                         if _is_unresolved_telegram_url(
                                 str(audio.get("telegramFileUrl") or audio.get("url") or "")):
                             continue
+                file_path = audio.get("telegramFilePath")
+                if file_path:
+                    return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
             url = audio.get("telegramFileUrl") or audio.get('url')
             if url:
                 if source.lower() == "telegram" and _is_unresolved_telegram_url(str(url)):
