@@ -155,7 +155,12 @@ class DownloadService:
             telegram_cache = await get_cached_audio(
                 track_id, quality=quality_value, source="telegram",
                 api_client=self.api_client)
-        if audio_cache:
+        # A Bale message mirror is only a reference to a message, not a
+        # downloadable URL. Continue through the mirror-download flow so a
+        # Telegram mirror can repair Bale without downloading from YouTube.
+        bale_cache_usable = bool(
+            audio_cache and not str(audio_cache).startswith("bale://"))
+        if bale_cache_usable:
             logger.info(f"Using cached audio for track {track_id} (quality: {quality_value}) -> {audio_cache}")
             # A completed dual-platform cache hit must already contain both
             # mirrors; otherwise continue and repair the missing platform.

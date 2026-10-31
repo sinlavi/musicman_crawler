@@ -265,8 +265,17 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
                                     logger.warning(
                                         f"Unable to resolve Telegram message {message_id} "
                                         f"for {track_id}: {resolve_error}")
+            if source.lower() == "bale":
+                bale_file_id = audio.get("baleFileId")
+                if bale_file_id:
+                    logger.info(f"Cached Bale file found for {track_id}: {bale_file_id}")
+                    return str(bale_file_id)
             url = audio.get("telegramFileUrl") or audio.get('url')
             if url:
+                if source.lower() == "bale" and str(url).startswith("bale://"):
+                    logger.warning(
+                                f"Skipping Bale mirror without file ID for {track_id}: {url}")
+                    continue
                 if source.lower() == "telegram" and _is_unresolved_telegram_url(str(url)):
                     message_id = _telegram_message_id(str(url))
                     if message_id:

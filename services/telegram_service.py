@@ -46,7 +46,7 @@ class TelegramUploadService:
             form.add_field("duration", str(duration))
         thumbnail = self._prepare_thumbnail(artwork)
         if thumbnail:
-            form.add_field("thumb", BytesIO(thumbnail), filename="cover.jpg",
+            form.add_field("thumbnail", BytesIO(thumbnail), filename="cover.jpg",
                            content_type="image/jpeg")
         with open(path, "rb") as audio:
             form.add_field("audio", audio, filename=os.path.basename(path),

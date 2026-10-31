@@ -87,6 +87,9 @@ class LyricsService:
                     return {"synced": "Instrumental", "plain": "Instrumental"}
                 return {"synced": data.get("syncedLyrics"), "plain": data.get("plainLyrics")}
             elif is_tech_err:
+                if status >= 500:
+                    logger.warning("LRCLIB temporarily unavailable (status %s)", status)
+                    return {}
                 msg = f"Technical error in LRCLIB direct get (Status: {status})"
                 logger.error(msg)
                 raise Exception(msg)
@@ -100,6 +103,9 @@ class LyricsService:
 
             results = data if status == 200 and data else []
             if is_tech_err:
+                if status >= 500:
+                    logger.warning("LRCLIB search temporarily unavailable (status %s)", status)
+                    return {}
                 msg = f"Technical error in LRCLIB search (Status: {status})"
                 logger.error(msg)
                 raise Exception(msg)
@@ -111,6 +117,11 @@ class LyricsService:
                 data, status, is_tech_err = await HttpClient.request_with_methods("GET", search_url, params=no_album_params)
                 results = data if status == 200 and data else []
                 if is_tech_err:
+                    if status >= 500:
+                        logger.warning(
+                            "LRCLIB album-less search temporarily unavailable (status %s)",
+                            status)
+                        return {}
                     msg = f"Technical error in LRCLIB search no-album (Status: {status})"
                     logger.error(msg)
                     raise Exception(msg)
@@ -121,6 +132,10 @@ class LyricsService:
                 data, status, is_tech_err = await HttpClient.request_with_methods("GET", search_url, params=general_params)
                 results = data if status == 200 and data else []
                 if is_tech_err:
+                    if status >= 500:
+                        logger.warning("LRCLIB general search temporarily unavailable (status %s)",
+                                       status)
+                        return {}
                     msg = f"Technical error in LRCLIB general search (Status: {status})"
                     logger.error(msg)
                     raise Exception(msg)

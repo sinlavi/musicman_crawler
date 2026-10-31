@@ -5,6 +5,8 @@ sys.modules['ytmusicapi'] = MagicMock()
 
 import pytest
 import unittest
+from io import BytesIO
+from PIL import Image
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 from services.download_service import DownloadService, _bale_upload_ids, _telegram_mirror_url
@@ -147,6 +149,24 @@ class TestCacheHitDualUpload(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bot.send_audio.call_count, 1)
             first_call_audio = bot.send_audio.call_args_list[0].kwargs['audio']
             self.assertEqual(first_call_audio, "file_320_id")
+
+
+class TestTelegramArtwork(unittest.IsolatedAsyncioTestCase):
+
+    async def test_send_audio_uses_current_thumbnail_field(self):
+        artwork = BytesIO()
+        Image.new("RGB", (20, 20), "red").save(artwork, format="PNG")
+        request = AsyncMock(return_value={"message_id": 1})
+        service = TelegramUploadService(token="token", chat_id="chat")
+        service._request = request
+
+        with patch("builtins.open", unittest.mock.mock_open(read_data=b"audio")):
+            await service.upload_audio("track.mp3", "Track", 120, artwork=artwork.getvalue())
+
+        form = request.call_args.kwargs["form"]
+        field_names = [field[0]["name"] for field in form._fields]
+        self.assertIn("thumbnail", field_names)
+        self.assertNotIn("thumb", field_names)
 
 if __name__ == '__main__':
     unittest.main()
