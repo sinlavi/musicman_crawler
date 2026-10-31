@@ -1,5 +1,4 @@
-import aiohttp
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any
 from core.logger import logger
 from core.http_client import HttpClient
 
@@ -8,34 +7,50 @@ class APIClient:
         self.base_url = base_url.rstrip('/')
         self.token = token
 
-    async def _request(self, action: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _post_json(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
         session = await HttpClient.get_session()
         headers = {
             'Authorization': f'Bearer {self.token}',
             'Authorization': 'Bearer ' + self.token,
             'Content-Type': 'application/json'
         }
-        headers['Authorization'] = 'Bearer ' + self.token
         try:
-            async with session.post(f"{self.base_url}?action={action}", json=data, headers=headers) as resp:
-                return await resp.json()
+            async with session.post(url, json=data, headers=headers) as resp:
+                status = resp.status
+                content_type = resp.headers.get('Content-Type', '')
+                if 'application/json' not in content_type.lower():
+                    body = await resp.text()
+                    logger.error(f"API returned HTTP {status} with non-JSON content: {body[:200]}")
+                    return {'success': False, 'status': status, 'message': 'Invalid API response'}
+                response = await resp.json()
+                if status >= 400:
+                    logger.error(f"API returned HTTP {status}: {response}")
+                return response if isinstance(response, dict) else {
+                    'success': False, 'status': status, 'message': 'Invalid API response'}
         except Exception as e:
             logger.error(f"API request failed: {e}")
             return {'success': False, 'message': str(e)}
 
+    async def _request(self, action: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._post_json(f"{self.base_url}?action={action}", data)
+
+    async def _post_path_json(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        response, status, technical_error = await HttpClient.request_with_methods(
+            "POST", url, json=data,
+            headers={
+                'Authorization': 'Bearer ' + self.token,
+                'Content-Type': 'application/json',
+            })
+        if technical_error:
+            logger.error(f"API path request failed: {url} (status={status})")
+            return {'success': False, 'status': status, 'message': 'API request failed'}
+        if not isinstance(response, dict):
+            logger.error(f"API path returned an invalid response: {url} (status={status})")
+            return {'success': False, 'status': status, 'message': 'Invalid API response'}
+        return response
+
     async def _request_path(self, path: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        session = await HttpClient.get_session()
-        headers = {
-            'Authorization': 'Bearer ' + self.token,
-            'Content-Type': 'application/json'
-        }
-        try:
-            async with session.post(f"{self.base_url}/{path.lstrip('/')}",
-                                    json=data, headers=headers) as resp:
-                return await resp.json()
-        except Exception as e:
-            logger.error(f"API request failed: {e}")
-            return {'success': False, 'message': str(e)}
+        return await self._post_path_json(f"{self.base_url}/{path.lstrip('/')}", data)
 
     async def register_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         return await self._request('register', user_data)
@@ -71,16 +86,8 @@ class APIClient:
 
     async def log_download(self, user_id: int, track_id: str, track_name: str, artist_name: str,
                            album_name: str = '', file_size: int = 0, download_source: str = 'youtube', quality: str = '192') -> Dict[str, Any]:
-        return await self._request('log_download', {
-            'user_id': user_id,
-            'track_id': track_id,
-            'track_name': track_name,
-            'artist_name': artist_name,
-            'album_name': album_name,
-            'file_size': file_size,
-            'download_source': download_source,
-            'quality': quality
-        })
+        logger.warning("Download logging skipped: current API has no log_download route")
+        return {'success': False, 'error': 'log_download endpoint is unavailable'}
 
     async def log_album_download(self, user_id: int, collection_id: str, collection_name: str,
                                  artist_name: str, total_tracks: int, successful_tracks: int,

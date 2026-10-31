@@ -167,10 +167,6 @@ class DownloadService:
 
                     if not is_batch:
                         await safe_delete(status_msg)
-                    await self.api_client.log_download(
-                        user_id, str(track_id), track.get('trackName', ''),
-                        track.get('artistName', ''), track.get('collectionName', ''),
-                        0, 'cache', quality_value)
                     await self.error_notifier.check_and_clear_if_resolved(
                         self.bot, test_success=True)
                     return status_msg, True
@@ -326,11 +322,6 @@ class DownloadService:
                                 "bale", str(track_id), converted_file, str(converted_message),
                                 other_quality, os.path.basename(converted_path), converted_mirror)
 
-            file_size = os.path.getsize(mp3_path)
-            await self.api_client.log_download(user_id, str(track_id), track.get('trackName', ''),
-                                               track.get('artistName', ''), track.get('collectionName', ''),
-                                               file_size, 'telegram' if telegram_cache else 'youtube',
-                                               quality_value)
             await self.error_notifier.check_and_clear_if_resolved(self.bot, test_success=True)
             if not is_batch:
                 await safe_delete(status_msg)
