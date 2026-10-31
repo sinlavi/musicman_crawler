@@ -41,6 +41,41 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Cache FFmpeg binaries
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/ffmpeg-bin
+            /usr/local/bin/ffmpeg
+            /usr/local/bin/ffprobe
+          key: ffmpeg-static-linux64-${{ runner.os }}-v1
+          restore-keys: |
+            ffmpeg-static-linux64-${{ runner.os }}-
+
+      - name: Install FFmpeg from static build
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/ffmpeg-bin"
+          cd "$HOME/ffmpeg-bin"
+          archive="ffmpeg-master-latest-linux64-gpl.tar.xz"
+          url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$archive"
+          wget --timeout=60 --tries=3 --retry-connrefused --no-verbose "$url"
+          tar -xf "$archive"
+          install -m 0755 ffmpeg-master-latest-linux64-gpl/bin/ffmpeg /usr/local/bin/ffmpeg
+          install -m 0755 ffmpeg-master-latest-linux64-gpl/bin/ffprobe /usr/local/bin/ffprobe
+          rm -rf ffmpeg-master-latest-linux64-gpl "$archive"
+
+      - name: Verify FFmpeg
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+          ffmpeg -f lavfi -i nullsrc=s=32x32:d=0.1 -f null - >/dev/null 2>&1
+
       - name: Cache WARP Docker image
         id: cache-warp
         uses: actions/cache@v4
