@@ -349,6 +349,8 @@ jobs:
           BALE_CHAT_ID: ${{ secrets.BALE_CHAT_ID }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          PROXY: ${{ secrets.PROXY }}
           OFFLINE_MODE: ${{ secrets.OFFLINE_MODE }}
           INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
           INSTANCE_ID: 1
