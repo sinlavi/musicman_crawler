@@ -108,11 +108,19 @@ ITUNES_BASE_URL=https://mm.3rah.ir/api
 # Sharding & Scaling
 INSTANCE_ID=1
 TOTAL_INSTANCES=1
+MAX_CONCURRENT_TASKS=15
+YOUTUBE_CONCURRENCY=3
+QUEUE_BATCH_SIZE=250
 
 # Optional Proxy Setup
 proxy=socks5h://127.0.0.1:1080
 OFFLINE_MODE=False
 ```
+
+`MAX_CONCURRENT_TASKS` controls how many queue items each worker processes at once.
+`YOUTUBE_CONCURRENCY` limits simultaneous YouTube downloads, and
+`QUEUE_BATCH_SIZE` controls the minimum number of pending items requested per queue poll.
+Tune these values carefully if the remote APIs or worker host have lower capacity.
 
 ### GitHub Actions secrets
 

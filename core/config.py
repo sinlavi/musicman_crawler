@@ -30,6 +30,9 @@ LRCLIB_API_KEY = os.getenv("LRCLIB_API_KEY")
 # Bot Behavior
 OFFLINE_MODE = os.getenv("OFFLINE_MODE", "False").lower() == "true"
 DEFAULT_QUALITY = "192"
+MAX_CONCURRENT_TASKS = max(1, int(os.getenv("MAX_CONCURRENT_TASKS", "15")))
+YOUTUBE_CONCURRENCY = max(1, int(os.getenv("YOUTUBE_CONCURRENCY", "3")))
+QUEUE_BATCH_SIZE = max(1, int(os.getenv("QUEUE_BATCH_SIZE", "250")))
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",

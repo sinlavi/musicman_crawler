@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional, Union, List
 from core.logger import logger
-from core.config import OFFLINE_MODE, DEFAULT_QUALITY
+from core.config import OFFLINE_MODE, DEFAULT_QUALITY, YOUTUBE_CONCURRENCY
 from core.http_client import HttpClient
 from crawlers.utils import get_track
 from crawlers.youtube import search_youtube_track, download_audio
@@ -66,9 +66,7 @@ class DownloadService:
         self.artwork_service = artwork_service
         self.tagging_service = tagging_service
         self.error_notifier = error_notifier
-        self.download_semaphore = asyncio.Semaphore(
-            max(1, int(os.getenv("YOUTUBE_CONCURRENCY", "2")))
-        )
+        self.download_semaphore = asyncio.Semaphore(YOUTUBE_CONCURRENCY)
         self.telegram = TelegramUploadService()
 
     async def _send_bale_audio(self, chat_id, path: str, title: str,

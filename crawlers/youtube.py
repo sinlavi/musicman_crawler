@@ -19,11 +19,12 @@ from rapidfuzz import fuzz
 from ytmusicapi import YTMusic
 
 try:
-    from core.config import COOKIES_FILE, OFFLINE_MODE, PROXY, USER_AGENTS
+    from core.config import COOKIES_FILE, OFFLINE_MODE, PROXY, USER_AGENTS, YOUTUBE_CONCURRENCY
 except ImportError:
     OFFLINE_MODE = False
     PROXY = "socks5h://127.0.0.1:1080"
     COOKIES_FILE = str(Path(__file__).resolve().parents[1] / "cookies.txt")
+    YOUTUBE_CONCURRENCY = max(1, int(os.getenv("YOUTUBE_CONCURRENCY", "3")))
 
 logger = logging.getLogger("yt_downloader")
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +60,7 @@ METHOD_ORDER_LOCK = asyncio.Lock()
 SEARCH_METHOD_ORDER = [8, 2, 3, 4, 5, 6, 7, 1]
 SEARCH_METHOD_ORDER_LOCK = asyncio.Lock()
 YOUTUBE_REQUEST_SEMAPHORE = asyncio.Semaphore(
-    max(1, int(os.getenv("YOUTUBE_CONCURRENCY", "2")))
+    YOUTUBE_CONCURRENCY
 )
 _YOUTUBE_RATE_LIMIT_UNTIL = 0.0
 _YOUTUBE_RATE_LIMIT_TRIGGERED = False

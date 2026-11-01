@@ -1,6 +1,6 @@
 from core.config import (
     BALE_TOKEN, API_BASE_URL, API_TOKEN, API_RETRY_DELAY_SECONDS, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY,
-    TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
+    TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, MAX_CONCURRENT_TASKS, QUEUE_BATCH_SIZE,
 )
 import os
 
@@ -30,7 +30,6 @@ import time
 INSTANCE_ID = int(os.getenv("INSTANCE_ID", "1"))
 TOTAL_INSTANCES = int(os.getenv("TOTAL_INSTANCES", "1"))
 MAX_RUNTIME = int(os.getenv("MAX_RUNTIME", 5.5 * 3600)) # 5.5 hours default
-MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "10"))
 START_TIME = time.time()
 
 # Target Chat ID from config
@@ -186,7 +185,7 @@ async def run_crawler():
 
             try:
                 # Poll for pending downloads to fill open slots
-                fetch_limit = max(available_slots * 5, 100)
+                fetch_limit = max(available_slots * 10, QUEUE_BATCH_SIZE)
                 queue_resp = await get_download_queue(status="pending", limit=fetch_limit)
 
                 # Check for technical error
