@@ -124,5 +124,14 @@ class TelegramUploadService:
                     raise RuntimeError(f"Telegram mirror download failed: HTTP {response.status}")
                 destination.write_bytes(await response.read())
 
+    async def download_file_path(self, file_path: str, destination: Path) -> None:
+        if not self.token:
+            raise RuntimeError("TELEGRAM_TOKEN is not configured")
+        path = str(file_path).lstrip("/")
+        await self.download(
+            f"https://api.telegram.org/file/bot{self.token}/{path}",
+            destination,
+        )
+
 
 __all__ = ["TelegramUploadService"]

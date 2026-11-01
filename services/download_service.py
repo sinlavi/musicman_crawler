@@ -111,7 +111,8 @@ class DownloadService:
                                       is_batch=False, album_cover_bytes=None, collection_id=None,
                                       selected_quality=None, track_name_hint=None, track_index=None,
                                       status_prefix="", skip_size_check=True,
-                                      silent=False, download_id=None):
+                                      silent=False, download_id=None,
+                                      telegram_file_path=None):
 
         # If no status_msg provided, use the first update to create it to avoid redundant send/delete
         if status_msg is None:
@@ -239,14 +240,22 @@ class DownloadService:
         # Try the Telegram mirror once. A failed mirror must fall back to the
         # original YouTube flow within this attempt.
         telegram_downloaded = False
-        if telegram_cache:
+        if telegram_file_path or telegram_cache:
             temp_dir = tempfile.mkdtemp(prefix="musicman-telegram-")
             mp3_path = os.path.join(temp_dir, f"{track_id}_320.mp3")
             status_msg = await self._update_status(
                 chat_id, status_msg, "📥 *در حال دریافت فایل آماده از تلگرام...*",
                 status_prefix, is_batch, silent=silent)
             try:
-                await self.telegram.download(telegram_cache, Path(mp3_path))
+                if telegram_file_path:
+                    logger.info(
+                        "Using Telegram file path from download queue for track %s",
+                        track_id,
+                    )
+                    await self.telegram.download_file_path(
+                        telegram_file_path, Path(mp3_path))
+                else:
+                    await self.telegram.download(telegram_cache, Path(mp3_path))
                 telegram_downloaded = True
                 lyrics_to_tag = None
             except Exception as telegram_error:
