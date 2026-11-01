@@ -18,6 +18,7 @@ from services.tagging_service import TaggingService
 from services.error_notifier import BaleUploadErrorNotifier
 from services.download_service import DownloadService
 from crawlers.itunes import get_download_queue, update_download_status, reset_stuck_downloads
+from crawlers.youtube import youtube_rate_limit_triggered
 
 import asyncio
 import signal
@@ -147,10 +148,26 @@ async def run_crawler():
             await reset_stuck_downloads()
 
         active_tasks = set()
+        processing_tasks = {}
         consecutive_tech_errors = 0
         task_done_event = asyncio.Event()
 
         while True:
+            if youtube_rate_limit_triggered():
+                logger.critical("YouTube rate limit detected. Restarting crawler workflow...")
+                pending_download_ids = []
+                tasks_to_cancel = []
+                for task, download_id in processing_tasks.items():
+                    if not task.done():
+                        task.cancel()
+                        pending_download_ids.append(download_id)
+                        tasks_to_cancel.append(task)
+                if tasks_to_cancel:
+                    await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+                for download_id in pending_download_ids:
+                    await update_download_status(download_id, "pending", percent=0)
+                raise SystemExit(75)
+
             # Check for runtime limit
             if time.time() - START_TIME > MAX_RUNTIME:
                 logger.info("Max runtime reached. Shutting down crawler gracefully...")
@@ -230,9 +247,11 @@ async def run_crawler():
 
                     active_tasks.add(download_id)
                     tasks_started += 1
-                    asyncio.create_task(
+                    task = asyncio.create_task(
                         process_queue_item(bot, item, download_service, user_id, active_tasks, task_done_event)
                     )
+                    processing_tasks[task] = download_id
+                    task.add_done_callback(processing_tasks.pop)
 
                 if tasks_started == 0:
                     if active_tasks:

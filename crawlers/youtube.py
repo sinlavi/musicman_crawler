@@ -62,6 +62,7 @@ YOUTUBE_REQUEST_SEMAPHORE = asyncio.Semaphore(
     max(1, int(os.getenv("YOUTUBE_CONCURRENCY", "2")))
 )
 _YOUTUBE_RATE_LIMIT_UNTIL = 0.0
+_YOUTUBE_RATE_LIMIT_TRIGGERED = False
 _YOUTUBE_RATE_LIMIT_LOCK = asyncio.Lock()
 YOUTUBE_RATE_LIMIT_COOLDOWN = max(
     15 * 60, int(os.getenv("YOUTUBE_RATE_LIMIT_COOLDOWN", str(60 * 60)))
@@ -592,11 +593,17 @@ def _is_youtube_rate_limit_error(error: BaseException) -> bool:
 
 async def _activate_youtube_cooldown() -> None:
     global _YOUTUBE_RATE_LIMIT_UNTIL
+    global _YOUTUBE_RATE_LIMIT_TRIGGERED
     async with _YOUTUBE_RATE_LIMIT_LOCK:
         _YOUTUBE_RATE_LIMIT_UNTIL = max(
             _YOUTUBE_RATE_LIMIT_UNTIL,
             time.monotonic() + YOUTUBE_RATE_LIMIT_COOLDOWN,
         )
+        _YOUTUBE_RATE_LIMIT_TRIGGERED = True
+
+
+def youtube_rate_limit_triggered() -> bool:
+    return _YOUTUBE_RATE_LIMIT_TRIGGERED
 
 
 def _normalize_url(url: str) -> str:

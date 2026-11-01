@@ -164,4 +164,15 @@ jobs:
           echo "YouTube cookies.txt is present"
 
       - name: Run worker
-        run: python main.py
+        run: |
+          while true; do
+            if python main.py; then
+              exit 0
+            else
+              status=$?
+            fi
+            if [[ "$status" -ne 75 ]]; then
+              exit "$status"
+            fi
+            echo "::warning::YouTube rate limit detected; restarting crawler workflow..."
+          done
