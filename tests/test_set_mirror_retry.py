@@ -64,6 +64,25 @@ class TestSetMirrorRetry(unittest.IsolatedAsyncioTestCase):
             mock_lookup.assert_awaited_once_with(
                 12345, entity="track", bypass_cache=True, quality="192")
 
+    async def test_duplicate_audio_mirror_stops_retries(self):
+        with patch("crawlers.itunes.fetch_itunes", new_callable=AsyncMock) as mock_fetch, \
+             patch("crawlers.itunes.lookup_itunes", new_callable=AsyncMock), \
+             patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            mock_fetch.return_value = {
+                "success": False,
+                "error": "Duplicate audio mirror (same quality & platform)",
+                "existing_id": 1334820,
+            }
+
+            res = await set_mirror(
+                "track", 1546949458, "audioUrl", "bale://72230",
+                quality="320", source="bale", max_retries=3)
+
+            self.assertTrue(res["success"])
+            self.assertTrue(res["duplicate"])
+            mock_fetch.assert_awaited_once()
+            mock_sleep.assert_not_awaited()
+
 
 if __name__ == '__main__':
     unittest.main()
