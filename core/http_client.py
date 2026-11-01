@@ -20,14 +20,19 @@ class HttpClient:
             if cls._proxy_session is None or cls._proxy_session.closed:
                 if PROXY.startswith("socks"):
                     proxy_url = PROXY.replace("socks5h://", "socks5://")
-                    connector = ProxyConnector.from_url(proxy_url, ssl=False)
+                    connector = ProxyConnector.from_url(
+                        proxy_url, ssl=False, force_close=True)
                 else:
-                    connector = aiohttp.TCPConnector(ssl=False)
+                    connector = aiohttp.TCPConnector(
+                        ssl=False, force_close=True, limit=20,
+                        enable_cleanup_closed=True)
                 cls._proxy_session = aiohttp.ClientSession(connector=connector, trust_env=True)
             return cls._proxy_session
         else:
             if cls._direct_session is None or cls._direct_session.closed:
-                connector = aiohttp.TCPConnector(ssl=False)
+                connector = aiohttp.TCPConnector(
+                    ssl=False, force_close=True, limit=20,
+                    enable_cleanup_closed=True)
                 cls._direct_session = aiohttp.ClientSession(connector=connector, trust_env=False)
             return cls._direct_session
 
@@ -54,7 +59,7 @@ class HttpClient:
         uas = list(USER_AGENTS)
         random.shuffle(uas)
 
-        attempts = max_attempts or max(len(uas) * 3, 6)
+        attempts = max_attempts or min(max(len(uas) * 2, 4), 6)
         for i in range(attempts):
             ua = uas[i % len(uas)]
             headers['User-Agent'] = headers.get('User-Agent') or ua
@@ -93,7 +98,7 @@ class HttpClient:
                                     body[:1000].replace("\n", " "),
                                 )
                                 break
-                            delay = min(2 ** min(i, 4), 16)
+                            delay = min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
                             logger.warning(
                                 f"Request to {url} failed with status {resp.status}; "
                                 f"retrying in {delay}s")
@@ -110,7 +115,7 @@ class HttpClient:
                 if i + 1 >= attempts:
                     logger.error("Final HTTP failure for %s: %s", url, e)
                     break
-                delay = min(2 ** min(i, 4), 16)
+                delay = min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
                 logger.warning(
                     f"Request to {url} failed ({type(e).__name__}: {e}); "
                     f"retrying in {delay}s")
