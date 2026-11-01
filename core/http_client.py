@@ -84,6 +84,8 @@ class HttpClient:
                             return None, 404, False
 
                         if resp.status in (408, 425, 429) or resp.status >= 500:
+                            if i + 1 >= attempts:
+                                break
                             delay = min(2 ** min(i, 4), 16)
                             logger.warning(
                                 f"Request to {url} failed with status {resp.status}; "
@@ -98,6 +100,8 @@ class HttpClient:
                             continue
 
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                if i + 1 >= attempts:
+                    break
                 delay = min(2 ** min(i, 4), 16)
                 logger.warning(
                     f"Request to {url} failed ({type(e).__name__}: {e}); "
