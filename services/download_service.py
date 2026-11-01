@@ -267,16 +267,40 @@ class DownloadService:
                             track_id,
                         )
                         if telegram_file_id:
-                            await self.telegram.download_file_id(
-                                telegram_file_id, Path(mp3_path))
+                            try:
+                                await self.telegram.download_file_id(
+                                    telegram_file_id, Path(mp3_path))
+                            except RuntimeError as file_id_error:
+                                if not telegram_message_id:
+                                    raise
+                                logger.warning(
+                                    "Telegram file ID is unavailable for %s; "
+                                    "resolving by message ID: %s",
+                                    track_id,
+                                    file_id_error,
+                                )
+                                await self.telegram.download_message_id(
+                                    telegram_message_id, Path(mp3_path))
                         elif telegram_message_id:
                             await self.telegram.download_message_id(
                                 telegram_message_id, Path(mp3_path))
                         else:
                             raise
                 elif telegram_file_id:
-                    await self.telegram.download_file_id(
-                        telegram_file_id, Path(mp3_path))
+                    try:
+                        await self.telegram.download_file_id(
+                            telegram_file_id, Path(mp3_path))
+                    except RuntimeError as file_id_error:
+                        if not telegram_message_id:
+                            raise
+                        logger.warning(
+                            "Telegram file ID is unavailable for %s; "
+                            "resolving by message ID: %s",
+                            track_id,
+                            file_id_error,
+                        )
+                        await self.telegram.download_message_id(
+                            telegram_message_id, Path(mp3_path))
                 elif telegram_message_id:
                     await self.telegram.download_message_id(
                         telegram_message_id, Path(mp3_path))
