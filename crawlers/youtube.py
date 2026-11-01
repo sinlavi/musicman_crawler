@@ -63,6 +63,9 @@ YOUTUBE_REQUEST_SEMAPHORE = asyncio.Semaphore(
 )
 _YOUTUBE_RATE_LIMIT_UNTIL = 0.0
 _YOUTUBE_RATE_LIMIT_LOCK = asyncio.Lock()
+YOUTUBE_RATE_LIMIT_COOLDOWN = max(
+    15 * 60, int(os.getenv("YOUTUBE_RATE_LIMIT_COOLDOWN", str(60 * 60)))
+)
 
 # ============================================================================
 # YouTube Music Helper
@@ -294,6 +297,9 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
                 logger.info(f"✅ YTMusic search successful (Proxy: {use_proxy}): {ytmusic_id}")
                 return ytmusic_id
         except Exception as e:
+            if _is_youtube_rate_limit_error(e):
+                await _activate_youtube_cooldown()
+                return None
             logger.debug(f"YTMusic search failed (Proxy: {use_proxy}): {e}")
     
     # Build search query
@@ -346,6 +352,9 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
             await asyncio.sleep(random.uniform(0.1, 0.3))
             
         except Exception as e:
+            if _is_youtube_rate_limit_error(e):
+                await _activate_youtube_cooldown()
+                return None
             logger.debug(f"Search method {method} error: {e}")
             # Move failed method to the end
             async with SEARCH_METHOD_ORDER_LOCK:
@@ -539,9 +548,7 @@ async def download_audio(
             except Exception as exc:
                 logger.warning("Method %d failed: %s", method, exc)
                 if _is_youtube_rate_limit_error(exc):
-                    async with _YOUTUBE_RATE_LIMIT_LOCK:
-                        global _YOUTUBE_RATE_LIMIT_UNTIL
-                        _YOUTUBE_RATE_LIMIT_UNTIL = time.monotonic() + 60 * 15
+                    await _activate_youtube_cooldown()
                     logger.error("YouTube rate limit detected; stopping fallback methods for this download")
                     break
                 async with METHOD_ORDER_LOCK:
@@ -581,6 +588,15 @@ async def download_audio(
 def _is_youtube_rate_limit_error(error: BaseException) -> bool:
     message = str(error).lower()
     return "rate-limited" in message or "rate limit" in message or "too many requests" in message
+
+
+async def _activate_youtube_cooldown() -> None:
+    global _YOUTUBE_RATE_LIMIT_UNTIL
+    async with _YOUTUBE_RATE_LIMIT_LOCK:
+        _YOUTUBE_RATE_LIMIT_UNTIL = max(
+            _YOUTUBE_RATE_LIMIT_UNTIL,
+            time.monotonic() + YOUTUBE_RATE_LIMIT_COOLDOWN,
+        )
 
 
 def _normalize_url(url: str) -> str:
