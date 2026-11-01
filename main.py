@@ -43,12 +43,15 @@ def _queue_telegram_file(item):
     attachments = item.get("attachments")
     if isinstance(attachments, dict):
         for audio in attachments.get("audioUrls") or []:
-            if isinstance(audio, dict) and any(audio.get(k) for k in direct):
-                direct = {
-                    "path": audio.get("telegramFilePath") or audio.get("telegramFileUrl"),
-                    "file_id": audio.get("telegramFileId"),
-                    "message_id": audio.get("telegramMessageId"),
-                }
+            if not isinstance(audio, dict):
+                continue
+            candidate = {
+                "path": audio.get("telegramFilePath") or audio.get("telegramFileUrl"),
+                "file_id": audio.get("telegramFileId"),
+                "message_id": audio.get("telegramMessageId"),
+            }
+            if any(candidate.values()):
+                direct = candidate
                 break
     return {k: str(v) for k, v in direct.items() if v}
 
