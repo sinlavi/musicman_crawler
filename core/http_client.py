@@ -85,6 +85,13 @@ class HttpClient:
 
                         if resp.status in (408, 425, 429) or resp.status >= 500:
                             if i + 1 >= attempts:
+                                body = await resp.text()
+                                logger.error(
+                                    "Final HTTP failure for %s: status=%s body=%s",
+                                    url,
+                                    resp.status,
+                                    body[:1000].replace("\n", " "),
+                                )
                                 break
                             delay = min(2 ** min(i, 4), 16)
                             logger.warning(
@@ -101,6 +108,7 @@ class HttpClient:
 
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
                 if i + 1 >= attempts:
+                    logger.error("Final HTTP failure for %s: %s", url, e)
                     break
                 delay = min(2 ** min(i, 4), 16)
                 logger.warning(

@@ -147,7 +147,13 @@ async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = 
         
 
     if is_tech_err:
-        logger.error(f"3rah fetch failed with technical error: {status} for {url}")
+        details = ""
+        if isinstance(data, dict):
+            details = f" body={data}"
+        elif isinstance(data, (str, bytes)):
+            details = f" body={str(data)[:1000]}"
+        logger.error(
+            f"3rah fetch failed with technical error: {status} for {url}{details}")
         # Returning None indicates technical error (consistent with design)
         return None
 
