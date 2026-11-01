@@ -39,15 +39,15 @@ AUDIO_POSTPROCESSOR = {
 COMMON_OPTS: dict = {
     "outtmpl": "%(title)s.%(ext)s",
     "noplaylist": True,
-    "retries": 10,
-    "fragment_retries": 10,
+    "retries": 3,
+    "fragment_retries": 3,
     "no_check_certificate": True,
-    "concurrent_fragments": 8,
+    "concurrent_fragments": 2,
     "quiet": True,
     "no_warnings": True,
-    "sleep_interval": 2,
-    "max_sleep_interval": 6,
-    "sleep_interval_requests": 1,
+    "sleep_interval": 4,
+    "max_sleep_interval": 10,
+    "sleep_interval_requests": 2,
     "socket_timeout": 20,
 }
 
@@ -58,6 +58,11 @@ METHOD_ORDER_LOCK = asyncio.Lock()
 # ── Search Method Order (same as download methods) ───────────────────────
 SEARCH_METHOD_ORDER = [8, 2, 3, 4, 5, 6, 7, 1]
 SEARCH_METHOD_ORDER_LOCK = asyncio.Lock()
+YOUTUBE_REQUEST_SEMAPHORE = asyncio.Semaphore(
+    max(1, int(os.getenv("YOUTUBE_CONCURRENCY", "2")))
+)
+_YOUTUBE_RATE_LIMIT_UNTIL = 0.0
+_YOUTUBE_RATE_LIMIT_LOCK = asyncio.Lock()
 
 # ============================================================================
 # YouTube Music Helper
@@ -274,6 +279,11 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
     if OFFLINE_MODE:
         logger.info("Offline mode: skipping YouTube search")
         return None
+
+    async with _YOUTUBE_RATE_LIMIT_LOCK:
+        if time.monotonic() < _YOUTUBE_RATE_LIMIT_UNTIL:
+            logger.warning("YouTube rate-limit cooldown is active; skipping search")
+            return None
     
     # First try YTMusic as it's faster for searches
     for use_proxy in [True, False]:
@@ -523,10 +533,17 @@ async def download_audio(
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         ydl.download([url])
 
-                await loop.run_in_executor(None, run_ydl)
+                async with YOUTUBE_REQUEST_SEMAPHORE:
+                    await loop.run_in_executor(None, run_ydl)
 
             except Exception as exc:
                 logger.warning("Method %d failed: %s", method, exc)
+                if _is_youtube_rate_limit_error(exc):
+                    async with _YOUTUBE_RATE_LIMIT_LOCK:
+                        global _YOUTUBE_RATE_LIMIT_UNTIL
+                        _YOUTUBE_RATE_LIMIT_UNTIL = time.monotonic() + 60 * 15
+                    logger.error("YouTube rate limit detected; stopping fallback methods for this download")
+                    break
                 async with METHOD_ORDER_LOCK:
                     if method in METHOD_ORDER:
                         METHOD_ORDER.remove(method)
@@ -559,6 +576,11 @@ async def download_audio(
     msg = f"❌ All download methods failed for: {url}"
     logger.error(msg)
     raise Exception(msg)
+
+
+def _is_youtube_rate_limit_error(error: BaseException) -> bool:
+    message = str(error).lower()
+    return "rate-limited" in message or "rate limit" in message or "too many requests" in message
 
 
 def _normalize_url(url: str) -> str:

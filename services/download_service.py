@@ -66,7 +66,9 @@ class DownloadService:
         self.artwork_service = artwork_service
         self.tagging_service = tagging_service
         self.error_notifier = error_notifier
-        self.download_semaphore = asyncio.Semaphore(100)
+        self.download_semaphore = asyncio.Semaphore(
+            max(1, int(os.getenv("YOUTUBE_CONCURRENCY", "2")))
+        )
         self.telegram = TelegramUploadService()
 
     async def _send_bale_audio(self, chat_id, path: str, title: str,
