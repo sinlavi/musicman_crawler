@@ -98,7 +98,8 @@ USER_AGENTS = [
 
 async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = False,
                        method: Literal["GET", "POST", "PUT", "DELETE"] = "GET", payload: dict = None,
-                       official: bool = False, quality: str = None) -> Optional[Dict[str, Any]]:
+                       official: bool = False, quality: str = None,
+                       http_max_attempts: Optional[int] = None) -> Optional[Dict[str, Any]]:
     params = params or {}
     if quality: params["quality"] = quality
 
@@ -121,7 +122,8 @@ async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = 
 
     # Use multi-method request for better reliability
     data, status, is_tech_err = await HttpClient.request_with_methods(
-        method, url, params=params, json=payload, headers=headers, use_proxy=False
+        method, url, params=params, json=payload, headers=headers, use_proxy=False,
+        max_attempts=http_max_attempts
     )
 
     if status == 200 and data:
@@ -167,7 +169,7 @@ async def lookup_itunes(id: Union[int, str], entity: Optional[str] = None, bypas
 
 
 async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str, mirror_url: str,
-                     quality: str = None, max_retries: int = 5,
+                     quality: str = None, max_retries: int = 3,
                      source: str = None) -> Optional[Dict[str, Any]]:
     if source and source.lower() == "telegram":
         mirror_url = re.sub(
@@ -183,7 +185,10 @@ async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str
 
     for attempt in range(1, max_retries + 1):
         try:
-            result = await fetch_itunes("mirror/set", method="POST", payload=payload)
+            # Retry this write here, but avoid the HTTP client's long generic
+            # retry sequence. Mirror writes are already bounded and idempotent.
+            result = await fetch_itunes(
+                "mirror/set", method="POST", payload=payload, http_max_attempts=1)
             if result and result.get("success"):
                 logger.info(f"Mirror set successful for {entity_id} ({url_type}, quality: {quality}), refreshing cache...")
                 await lookup_itunes(entity_id, entity=entity_type, bypass_cache=True, quality=quality)
@@ -197,7 +202,7 @@ async def set_mirror(entity_type: str, entity_id: Union[int, str], url_type: str
             logger.warning(f"set_mirror attempt {attempt}/{max_retries} exception for {entity_id}: {e}")
 
         if attempt < max_retries:
-            await asyncio.sleep(2 * attempt)
+            await asyncio.sleep(0.5 * attempt)
 
     logger.error(f"set_mirror failed after {max_retries} attempts for {entity_id}")
     return None
