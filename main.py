@@ -34,26 +34,29 @@ START_TIME = time.time()
 # Target Chat ID from config
 TARGET_CHANNEL_ID = TARGET_CHAT_ID
 
-def _queue_telegram_file_path(item):
-    direct = item.get("telegramFilePath") or item.get("telegram_file_path")
-    if direct:
-        return str(direct)
+def _queue_telegram_file(item):
+    direct = {
+        "path": item.get("telegramFilePath") or item.get("telegram_file_path"),
+        "file_id": item.get("telegramFileId") or item.get("telegram_file_id"),
+        "message_id": item.get("telegramMessageId") or item.get("telegram_message_id"),
+    }
     attachments = item.get("attachments")
-    if not isinstance(attachments, dict):
-        return None
-    for audio in attachments.get("audioUrls") or []:
-        if not isinstance(audio, dict):
-            continue
-        path = audio.get("telegramFilePath")
-        if path:
-            return str(path)
-    return None
+    if isinstance(attachments, dict):
+        for audio in attachments.get("audioUrls") or []:
+            if isinstance(audio, dict) and any(audio.get(k) for k in direct):
+                direct = {
+                    "path": audio.get("telegramFilePath") or audio.get("telegramFileUrl"),
+                    "file_id": audio.get("telegramFileId"),
+                    "message_id": audio.get("telegramMessageId"),
+                }
+                break
+    return {k: str(v) for k, v in direct.items() if v}
 
 async def process_queue_item(bot, item, download_service, user_id, active_tasks, task_done_event=None):
     download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
     track_id = item.get("trackId") or item.get("track_id") or item.get("id")
     quality = str(item.get("quality") or DEFAULT_QUALITY)
-    telegram_file_path = _queue_telegram_file_path(item)
+    telegram_file = _queue_telegram_file(item)
 
     logger.info(f"Processing download {download_id} for track {track_id} (quality: {quality})")
 
@@ -77,7 +80,7 @@ async def process_queue_item(bot, item, download_service, user_id, active_tasks,
                     selected_quality=quality,
                     silent=True,
                     download_id=download_id,
-                    telegram_file_path=telegram_file_path,
+                    telegram_file=telegram_file,
                 )
 
                 if success:

@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
@@ -128,10 +129,25 @@ class TelegramUploadService:
         if not self.token:
             raise RuntimeError("TELEGRAM_TOKEN is not configured")
         path = str(file_path).lstrip("/")
+        if path.lower().startswith(("http://", "https://")):
+            parsed = urlparse(path)
+            path = parsed.path.lstrip("/")
+            if path.lower().startswith("file/"):
+                path = path[5:]
+        if path.lower().startswith("file/"):
+            path = path[5:]
         await self.download(
-            f"https://api.telegram.org/file/bot{self.token}/{path}",
+            f"https://api.telegram.org/file/bot{self.token}/{path.lstrip('/')}",
             destination,
         )
+
+    async def download_file_id(self, file_id: str, destination: Path) -> None:
+        info = await self.file_info(str(file_id))
+        await self.download_file_path(info["file_path"], destination)
+
+    async def download_message_id(self, message_id: str, destination: Path) -> None:
+        info = await self.file_info_from_message_id(str(message_id))
+        await self.download_file_path(info["file_path"], destination)
 
 
 __all__ = ["TelegramUploadService"]

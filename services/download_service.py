@@ -112,7 +112,7 @@ class DownloadService:
                                       selected_quality=None, track_name_hint=None, track_index=None,
                                       status_prefix="", skip_size_check=True,
                                       silent=False, download_id=None,
-                                      telegram_file_path=None):
+                                      telegram_file_path=None, telegram_file=None):
 
         # If no status_msg provided, use the first update to create it to avoid redundant send/delete
         if status_msg is None:
@@ -240,20 +240,46 @@ class DownloadService:
         # Try the Telegram mirror once. A failed mirror must fall back to the
         # original YouTube flow within this attempt.
         telegram_downloaded = False
-        if telegram_file_path or telegram_cache:
+        telegram_file = telegram_file or {}
+        telegram_path = telegram_file.get("path") or telegram_file_path
+        telegram_file_id = telegram_file.get("file_id")
+        telegram_message_id = telegram_file.get("message_id")
+        if telegram_path or telegram_file_id or telegram_message_id or telegram_cache:
             temp_dir = tempfile.mkdtemp(prefix="musicman-telegram-")
             mp3_path = os.path.join(temp_dir, f"{track_id}_320.mp3")
             status_msg = await self._update_status(
                 chat_id, status_msg, "📥 *در حال دریافت فایل آماده از تلگرام...*",
                 status_prefix, is_batch, silent=silent)
             try:
-                if telegram_file_path:
+                if telegram_path:
                     logger.info(
                         "Using Telegram file path from download queue for track %s",
                         track_id,
                     )
-                    await self.telegram.download_file_path(
-                        telegram_file_path, Path(mp3_path))
+                    try:
+                        await self.telegram.download_file_path(
+                            telegram_path, Path(mp3_path))
+                    except RuntimeError as path_error:
+                        if "HTTP 404" not in str(path_error):
+                            raise
+                        logger.warning(
+                            "Telegram file path is stale for %s; resolving a fresh path",
+                            track_id,
+                        )
+                        if telegram_file_id:
+                            await self.telegram.download_file_id(
+                                telegram_file_id, Path(mp3_path))
+                        elif telegram_message_id:
+                            await self.telegram.download_message_id(
+                                telegram_message_id, Path(mp3_path))
+                        else:
+                            raise
+                elif telegram_file_id:
+                    await self.telegram.download_file_id(
+                        telegram_file_id, Path(mp3_path))
+                elif telegram_message_id:
+                    await self.telegram.download_message_id(
+                        telegram_message_id, Path(mp3_path))
                 else:
                     await self.telegram.download(telegram_cache, Path(mp3_path))
                 telegram_downloaded = True
