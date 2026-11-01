@@ -17,6 +17,7 @@ from services.artwork_service import ArtworkService
 from services.tagging_service import TaggingService
 from services.error_notifier import BaleUploadErrorNotifier
 from services.download_service import DownloadService
+from services.worker_restart import restart_worker
 from crawlers.itunes import get_download_queue, update_download_status, reset_stuck_downloads
 from crawlers.youtube import youtube_rate_limit_triggered
 
@@ -34,6 +35,7 @@ START_TIME = time.time()
 
 # Target Chat ID from config
 TARGET_CHANNEL_ID = TARGET_CHAT_ID
+MAX_CONSECUTIVE_QUEUE_ERRORS = 3
 
 def _queue_telegram_file(item):
     direct = {
@@ -154,19 +156,9 @@ async def run_crawler():
 
         while True:
             if youtube_rate_limit_triggered():
-                logger.critical("YouTube rate limit detected. Restarting crawler workflow...")
-                pending_download_ids = []
-                tasks_to_cancel = []
-                for task, download_id in processing_tasks.items():
-                    if not task.done():
-                        task.cancel()
-                        pending_download_ids.append(download_id)
-                        tasks_to_cancel.append(task)
-                if tasks_to_cancel:
-                    await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
-                for download_id in pending_download_ids:
-                    await update_download_status(download_id, "pending", percent=0)
-                raise SystemExit(75)
+                await restart_worker(
+                    processing_tasks, "YouTube rate limit detected.", update_download_status
+                )
 
             # Check for runtime limit
             if time.time() - START_TIME > MAX_RUNTIME:
@@ -199,17 +191,38 @@ async def run_crawler():
                 # Check for technical error
                 if queue_resp is None:
                     consecutive_tech_errors += 1
-                    logger.warning(f"Technical error encountered ({consecutive_tech_errors}/10)")
-                    if consecutive_tech_errors >= 30:
-                        logger.critical("Too many consecutive technical errors. Exiting for workflow restart...")
-                        sys.exit(1)
+                    logger.warning(
+                        "Queue API technical error (%s/%s)",
+                        consecutive_tech_errors,
+                        MAX_CONSECUTIVE_QUEUE_ERRORS,
+                    )
+                    if consecutive_tech_errors >= MAX_CONSECUTIVE_QUEUE_ERRORS:
+                        await restart_worker(
+                            processing_tasks, "Repeated queue API failures.", update_download_status
+                        )
+                    await asyncio.sleep(min(60, 10 + consecutive_tech_errors))
+                    continue
+
+                if not queue_resp.get("success"):
+                    consecutive_tech_errors += 1
+                    logger.warning(
+                        "Queue API returned an unsuccessful response (%s/%s)",
+                        consecutive_tech_errors,
+                        MAX_CONSECUTIVE_QUEUE_ERRORS,
+                    )
+                    if consecutive_tech_errors >= MAX_CONSECUTIVE_QUEUE_ERRORS:
+                        await restart_worker(
+                            processing_tasks,
+                            "Repeated unsuccessful queue responses.",
+                            update_download_status,
+                        )
                     await asyncio.sleep(min(60, 10 + consecutive_tech_errors))
                     continue
 
                 # Reset error counter on any non-technical response
                 consecutive_tech_errors = 0
 
-                if not queue_resp.get("success") or not queue_resp.get("items"):
+                if not queue_resp.get("items"):
                     logger.debug("No pending downloads found. Sleeping briefly...")
                     if active_tasks:
                         task_done_event.clear()

@@ -47,6 +47,7 @@ class HttpClient:
     async def request_with_methods(cls, method: str, url: str, *,
                                    use_proxy: bool = True,
                                    max_attempts: Optional[int] = None,
+                                   timeout_seconds: float = 60,
                                    **kwargs) -> Tuple[Any, int, bool]:
         """
         Executes a request using multiple methods (different User-Agents and toggling proxy).
@@ -75,7 +76,7 @@ class HttpClient:
                 async with cls._request_semaphore:
                     response_context = session.request(
                         method, url, headers=headers, proxy=current_proxy,
-                        ssl=False, timeout=60, **kwargs)
+                        ssl=False, timeout=aiohttp.ClientTimeout(total=timeout_seconds), **kwargs)
                     async with response_context as resp:
                         last_status = resp.status
                         if resp.status == 200:

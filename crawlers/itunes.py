@@ -99,7 +99,9 @@ USER_AGENTS = [
 async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = False,
                        method: Literal["GET", "POST", "PUT", "DELETE"] = "GET", payload: dict = None,
                        official: bool = False, quality: str = None,
-                       http_max_attempts: Optional[int] = None) -> Optional[Dict[str, Any]]:
+                       http_max_attempts: Optional[int] = None,
+                       http_timeout_seconds: float = 60,
+                       http_use_proxy: bool = False) -> Optional[Dict[str, Any]]:
     params = params or {}
     if quality: params["quality"] = quality
 
@@ -122,8 +124,8 @@ async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = 
 
     # Use multi-method request for better reliability
     data, status, is_tech_err = await HttpClient.request_with_methods(
-        method, url, params=params, json=payload, headers=headers, use_proxy=False,
-        max_attempts=http_max_attempts
+        method, url, params=params, json=payload, headers=headers, use_proxy=http_use_proxy,
+        max_attempts=http_max_attempts, timeout_seconds=http_timeout_seconds
     )
 
     if status == 200 and data:
@@ -324,17 +326,31 @@ async def get_cached_audio(track_id: Union[int, str], quality: str = None,
 
 async def get_download_queue(status: str = "pending", limit: int = 60) -> Optional[Dict[str, Any]]:
     logger.info(f"Fetching download queue with status: {status}")
-    return await fetch_itunes("download/queue", params={"status": status, "limit": limit})
+    return await fetch_itunes(
+        "download/queue",
+        params={"status": status, "limit": limit},
+        http_max_attempts=2,
+        http_timeout_seconds=20,
+        http_use_proxy=True,
+    )
 
 
-async def update_download_status(download_id: int, status: str, error_message: str = None, percent: int = None) -> Optional[Dict[str, Any]]:
+async def update_download_status(download_id: int, status: str, error_message: str = None,
+                                 percent: int = None, http_max_attempts: Optional[int] = None,
+                                 http_timeout_seconds: float = 60,
+                                 http_use_proxy: bool = False) -> Optional[Dict[str, Any]]:
     logger.info(f"Updating download {download_id} to status: {status} ({percent}%)")
     payload = {"id": download_id, "status": status}
     if error_message:
         payload["errorMessage"] = error_message
     if percent is not None:
         payload["percent"] = percent
-    return await fetch_itunes("download/update", method="POST", payload=payload)
+    return await fetch_itunes(
+        "download/update", method="POST", payload=payload,
+        http_max_attempts=http_max_attempts,
+        http_timeout_seconds=http_timeout_seconds,
+        http_use_proxy=http_use_proxy,
+    )
 
 
 async def reset_stuck_downloads() -> Optional[Dict[str, Any]]:

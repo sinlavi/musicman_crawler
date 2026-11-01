@@ -174,5 +174,6 @@ jobs:
             if [[ "$status" -ne 75 ]]; then
               exit "$status"
             fi
-            echo "::warning::YouTube rate limit detected; restarting crawler workflow..."
+            echo "::warning::Worker requested a restart; restarting crawler..."
+            sleep 30
           done
