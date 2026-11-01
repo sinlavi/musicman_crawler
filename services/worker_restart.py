@@ -1,5 +1,6 @@
 import asyncio
 
+from core.config import API_RETRY_DELAY_SECONDS
 from core.logger import logger
 
 
@@ -24,6 +25,7 @@ async def restart_worker(processing_tasks, reason, update_download_status):
                 http_max_attempts=2,
                 http_timeout_seconds=15,
                 http_use_proxy=True,
+                http_retry_delay_seconds=API_RETRY_DELAY_SECONDS,
             )
             for download_id in pending_download_ids
         ),

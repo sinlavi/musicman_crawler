@@ -48,6 +48,7 @@ class HttpClient:
                                    use_proxy: bool = True,
                                    max_attempts: Optional[int] = None,
                                    timeout_seconds: float = 60,
+                                   retry_delay_seconds: Optional[float] = None,
                                    **kwargs) -> Tuple[Any, int, bool]:
         """
         Executes a request using multiple methods (different User-Agents and toggling proxy).
@@ -99,7 +100,11 @@ class HttpClient:
                                     body[:1000].replace("\n", " "),
                                 )
                                 break
-                            delay = min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
+                            delay = (
+                                max(0.0, retry_delay_seconds)
+                                if retry_delay_seconds is not None
+                                else min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
+                            )
                             logger.warning(
                                 f"Request to {url} failed with status {resp.status}; "
                                 f"retrying in {delay}s")
@@ -116,7 +121,11 @@ class HttpClient:
                 if i + 1 >= attempts:
                     logger.error("Final HTTP failure for %s: %s", url, e)
                     break
-                delay = min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
+                delay = (
+                    max(0.0, retry_delay_seconds)
+                    if retry_delay_seconds is not None
+                    else min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
+                )
                 logger.warning(
                     f"Request to {url} failed ({type(e).__name__}: {e}); "
                     f"retrying in {delay}s")

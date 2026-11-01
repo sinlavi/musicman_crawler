@@ -1,5 +1,5 @@
 from core.config import (
-    BALE_TOKEN, API_BASE_URL, API_TOKEN, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY,
+    BALE_TOKEN, API_BASE_URL, API_TOKEN, API_RETRY_DELAY_SECONDS, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY,
     TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
 )
 import os
@@ -36,6 +36,7 @@ START_TIME = time.time()
 # Target Chat ID from config
 TARGET_CHANNEL_ID = TARGET_CHAT_ID
 MAX_CONSECUTIVE_QUEUE_ERRORS = 3
+QUEUE_ERROR_RETRY_DELAY_SECONDS = API_RETRY_DELAY_SECONDS
 
 def _queue_telegram_file(item):
     direct = {
@@ -200,7 +201,7 @@ async def run_crawler():
                         await restart_worker(
                             processing_tasks, "Repeated queue API failures.", update_download_status
                         )
-                    await asyncio.sleep(min(60, 10 + consecutive_tech_errors))
+                    await asyncio.sleep(QUEUE_ERROR_RETRY_DELAY_SECONDS)
                     continue
 
                 if not queue_resp.get("success"):
@@ -216,7 +217,7 @@ async def run_crawler():
                             "Repeated unsuccessful queue responses.",
                             update_download_status,
                         )
-                    await asyncio.sleep(min(60, 10 + consecutive_tech_errors))
+                    await asyncio.sleep(QUEUE_ERROR_RETRY_DELAY_SECONDS)
                     continue
 
                 # Reset error counter on any non-technical response

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import crawlers.itunes as itunes
+from core.config import API_RETRY_DELAY_SECONDS
 from services.worker_restart import restart_worker
 
 
@@ -17,6 +18,7 @@ async def test_download_queue_uses_bounded_http_retries(monkeypatch):
     assert request.await_args.kwargs["max_attempts"] == 2
     assert request.await_args.kwargs["timeout_seconds"] == 20
     assert request.await_args.kwargs["use_proxy"] is True
+    assert request.await_args.kwargs["retry_delay_seconds"] == API_RETRY_DELAY_SECONDS
 
 
 @pytest.mark.asyncio
@@ -39,4 +41,5 @@ async def test_restart_worker_cancels_and_requeues_active_download():
         http_max_attempts=2,
         http_timeout_seconds=15,
         http_use_proxy=True,
+        http_retry_delay_seconds=API_RETRY_DELAY_SECONDS,
     )

@@ -8,7 +8,14 @@ from typing import Optional, Dict, Any, Literal, List, Union, Tuple
 from pathlib import Path
 import aiosqlite
 
-from core.config import ITUNES_BASE_URL, OFFLINE_MODE, PROXY, API_TOKEN, TELEGRAM_TOKEN
+from core.config import (
+    API_RETRY_DELAY_SECONDS,
+    ITUNES_BASE_URL,
+    OFFLINE_MODE,
+    PROXY,
+    API_TOKEN,
+    TELEGRAM_TOKEN,
+)
 from core.logger import logger
 from core.http_client import HttpClient
 from services.telegram_service import TelegramUploadService
@@ -101,7 +108,9 @@ async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = 
                        official: bool = False, quality: str = None,
                        http_max_attempts: Optional[int] = None,
                        http_timeout_seconds: float = 60,
-                       http_use_proxy: bool = False) -> Optional[Dict[str, Any]]:
+                       http_use_proxy: bool = False,
+                       http_retry_delay_seconds: Optional[float] = API_RETRY_DELAY_SECONDS
+                       ) -> Optional[Dict[str, Any]]:
     params = params or {}
     if quality: params["quality"] = quality
 
@@ -125,7 +134,9 @@ async def fetch_itunes(endpoint: str, params: dict = None, bypass_cache: bool = 
     # Use multi-method request for better reliability
     data, status, is_tech_err = await HttpClient.request_with_methods(
         method, url, params=params, json=payload, headers=headers, use_proxy=http_use_proxy,
-        max_attempts=http_max_attempts, timeout_seconds=http_timeout_seconds
+        max_attempts=http_max_attempts,
+        timeout_seconds=http_timeout_seconds,
+        retry_delay_seconds=http_retry_delay_seconds,
     )
 
     if status == 200 and data:
@@ -338,7 +349,9 @@ async def get_download_queue(status: str = "pending", limit: int = 60) -> Option
 async def update_download_status(download_id: int, status: str, error_message: str = None,
                                  percent: int = None, http_max_attempts: Optional[int] = None,
                                  http_timeout_seconds: float = 60,
-                                 http_use_proxy: bool = False) -> Optional[Dict[str, Any]]:
+                                 http_use_proxy: bool = False,
+                                 http_retry_delay_seconds: Optional[float] = API_RETRY_DELAY_SECONDS
+                                 ) -> Optional[Dict[str, Any]]:
     logger.info(f"Updating download {download_id} to status: {status} ({percent}%)")
     payload = {"id": download_id, "status": status}
     if error_message:
@@ -350,6 +363,7 @@ async def update_download_status(download_id: int, status: str, error_message: s
         http_max_attempts=http_max_attempts,
         http_timeout_seconds=http_timeout_seconds,
         http_use_proxy=http_use_proxy,
+        http_retry_delay_seconds=http_retry_delay_seconds,
     )
 
 

@@ -23,6 +23,7 @@ INFO_CHANNEL_ID = os.getenv("INFO_CHANNEL_ID")
 ITUNES_BASE_URL = os.getenv("ITUNES_BASE_URL", "https://mm.3rah.ir/api")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://mm.3rah.ir/api")
 API_TOKEN = os.getenv("API_TOKEN", "change_me_to_a_secure_token")
+API_RETRY_DELAY_SECONDS = max(0.0, float(os.getenv("API_RETRY_DELAY_SECONDS", "2")))
 LRCLIB_APP_ID = os.getenv("LRCLIB_APP_ID")
 LRCLIB_API_KEY = os.getenv("LRCLIB_API_KEY")
 
