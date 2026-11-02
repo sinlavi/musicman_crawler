@@ -62,6 +62,18 @@ def _queue_download_id(item):
     return item.get("download_id") or item.get("downloadId") or item.get("id")
 
 
+def _queue_shard_id(item):
+    return item.get("trackId") or item.get("track_id") or _queue_download_id(item)
+
+
+def _queue_items_for_instance(items, instance_id=INSTANCE_ID, total_instances=TOTAL_INSTANCES):
+    return [
+        item for item in items
+        if (shard_id := _queue_shard_id(item)) is not None
+        and _belongs_to_instance(shard_id, instance_id, total_instances)
+    ]
+
+
 def _merge_priority_items(pending_batch, incoming_items, active_download_ids):
     queued_items = {
         _queue_download_id(item): item
@@ -291,14 +303,22 @@ async def run_crawler():
 
                     consecutive_tech_errors = 0
                     queue_items = _normalize_queue_items(queue_resp.get("items", []))
+                    assigned_items = _queue_items_for_instance(queue_items)
+                    logger.info(
+                        "Queue returned %s pending item(s); %s assigned to worker %s/%s",
+                        len(queue_items),
+                        len(assigned_items),
+                        INSTANCE_ID,
+                        TOTAL_INSTANCES,
+                    )
                     if polling_priority:
                         pending_batch = _merge_priority_items(
-                            pending_batch, queue_items, active_tasks
+                            pending_batch, assigned_items, active_tasks
                         )
                     else:
                         pending_batch.extend(
                             sorted(
-                                queue_items,
+                                assigned_items,
                                 key=_queue_priority,
                                 reverse=True,
                             )
@@ -330,7 +350,7 @@ async def run_crawler():
                     if status in {"downloading", "failed", "stopped"}:
                         continue
 
-                    if not _belongs_to_instance(download_id):
+                    if not _belongs_to_instance(_queue_shard_id(item)):
                         continue
                     if download_id in active_tasks:
                         continue

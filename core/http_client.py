@@ -10,12 +10,8 @@ from aiohttp_socks import ProxyConnector
 from core.config import API_BASE_URL, ITUNES_BASE_URL, USER_AGENTS
 
 logger = logging.getLogger("HttpClient")
-_API_PROXY_PREFERENCE_SECONDS = 5 * 60
-_API_PROXY_PREFERRED_UNTIL = 0.0
-_API_PROXY_FAILURE_LIMIT = 2
-_API_PROXY_COOLDOWN_SECONDS = 5 * 60
-_API_PROXY_CONSECUTIVE_FAILURES = 0
-_API_PROXY_DISABLED_UNTIL = 0.0
+_API_REQUEST_COOLDOWN_SECONDS = 60.0
+_API_REQUESTS_PAUSED_UNTIL = 0.0
 
 
 def _is_3rah_request(url: str) -> bool:
@@ -26,6 +22,42 @@ def _is_3rah_request(url: str) -> bool:
         if base_url
     }
     return host == "mm.3rah.ir" or host in configured_hosts
+
+
+def _pause_3rah_requests() -> None:
+    global _API_REQUESTS_PAUSED_UNTIL
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+    paused_until = max(
+        _API_REQUESTS_PAUSED_UNTIL,
+        now + _API_REQUEST_COOLDOWN_SECONDS,
+    )
+    if paused_until > _API_REQUESTS_PAUSED_UNTIL:
+        _API_REQUESTS_PAUSED_UNTIL = paused_until
+        logger.warning(
+            "Pausing all 3rah requests for %.0f seconds after a connection failure",
+            paused_until - now,
+        )
+
+
+async def _wait_for_3rah_cooldown() -> None:
+    loop = asyncio.get_running_loop()
+    while True:
+        remaining = _API_REQUESTS_PAUSED_UNTIL - loop.time()
+        if remaining <= 0:
+            return
+        await asyncio.sleep(remaining)
+
+
+async def _acquire_request_slot(semaphore: asyncio.Semaphore, is_3rah: bool) -> None:
+    loop = asyncio.get_running_loop()
+    while True:
+        if is_3rah:
+            await _wait_for_3rah_cooldown()
+        await semaphore.acquire()
+        if not is_3rah or _API_REQUESTS_PAUSED_UNTIL <= loop.time():
+            return
+        semaphore.release()
 
 
 def _retry_delay(
@@ -116,17 +148,13 @@ class HttpClient:
                                    retry_delay_seconds: Optional[float] = None,
                                    **kwargs) -> Tuple[Any, int, bool]:
         """
-        Executes a request using multiple methods (different User-Agents and toggling proxy).
+        Executes a request with retries while preserving its configured proxy route.
         Returns (data, status_code, is_technical_error).
         """
-        global _API_PROXY_PREFERRED_UNTIL
-        global _API_PROXY_CONSECUTIVE_FAILURES
-        global _API_PROXY_DISABLED_UNTIL
         from core.config import PROXY
         headers = kwargs.pop('headers', {}).copy()
         last_status = 0
         is_3rah = _is_3rah_request(url)
-        api_proxy_override = None
 
         uas = list(USER_AGENTS)
         random.shuffle(uas)
@@ -135,25 +163,9 @@ class HttpClient:
         for i in range(attempts):
             ua = uas[i % len(uas)]
             headers['User-Agent'] = headers.get('User-Agent') or ua
-            if is_3rah:
-                now = asyncio.get_running_loop().time()
-                if _API_PROXY_DISABLED_UNTIL and now >= _API_PROXY_DISABLED_UNTIL:
-                    _API_PROXY_DISABLED_UNTIL = 0.0
-                    _API_PROXY_CONSECUTIVE_FAILURES = 0
-                    logger.info("WARP cooldown ended; re-enabling WARP for 3rah")
-                proxy_disabled = now < _API_PROXY_DISABLED_UNTIL
-                proxy_preferred = now < _API_PROXY_PREFERRED_UNTIL
-                if proxy_disabled:
-                    attempt_proxy = False
-                elif api_proxy_override is not None:
-                    attempt_proxy = bool(PROXY) and api_proxy_override
-                elif proxy_preferred:
-                    attempt_proxy = bool(PROXY)
-                else:
-                    attempt_proxy = bool(PROXY) and use_proxy and i % 2 == 0
-            else:
-                # Non-3rah callers retain the existing transport selection.
-                attempt_proxy = use_proxy and PROXY and i % 2 == 0
+            attempt_proxy = bool(use_proxy and PROXY)
+            if not is_3rah:
+                attempt_proxy = bool(attempt_proxy and i % 2 == 0)
 
             # For HTTP proxies in direct session, we still might want to pass it?
             # No, if use_proxy is False we want direct.
@@ -162,7 +174,8 @@ class HttpClient:
             retry_delay = None
             try:
                 session = await cls.get_session(use_proxy=bool(attempt_proxy))
-                async with cls._request_semaphore:
+                await _acquire_request_slot(cls._request_semaphore, is_3rah)
+                try:
                     response_context = session.request(
                         method, url, headers=headers, proxy=current_proxy,
                         ssl=False, timeout=aiohttp.ClientTimeout(total=timeout_seconds), **kwargs)
@@ -173,25 +186,10 @@ class HttpClient:
                                 data = await resp.json()
                             except (aiohttp.ContentTypeError, ValueError):
                                 data = await resp.read()
-                            if is_3rah:
-                                if attempt_proxy:
-                                    _API_PROXY_CONSECUTIVE_FAILURES = 0
-                                else:
-                                    _API_PROXY_PREFERRED_UNTIL = 0.0
                             return data, resp.status, False
 
                         if resp.status == 404:
-                            if is_3rah:
-                                if attempt_proxy:
-                                    _API_PROXY_CONSECUTIVE_FAILURES = 0
-                                else:
-                                    _API_PROXY_PREFERRED_UNTIL = 0.0
                             return None, 404, False
-                        if is_3rah:
-                            if attempt_proxy:
-                                _API_PROXY_CONSECUTIVE_FAILURES = 0
-                            else:
-                                _API_PROXY_PREFERRED_UNTIL = 0.0
 
                         if resp.status in (408, 425, 429) or resp.status >= 500:
                             body = await resp.text()
@@ -219,46 +217,12 @@ class HttpClient:
                                 f"Request to {url} failed with status {resp.status}, "
                                 "trying next method...")
                             continue
+                finally:
+                    cls._request_semaphore.release()
 
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-                if is_3rah and PROXY:
-                    if attempt_proxy:
-                        _API_PROXY_CONSECUTIVE_FAILURES += 1
-                        api_proxy_override = False
-                        if _API_PROXY_CONSECUTIVE_FAILURES >= _API_PROXY_FAILURE_LIMIT:
-                            _API_PROXY_DISABLED_UNTIL = (
-                                asyncio.get_running_loop().time()
-                                + _API_PROXY_COOLDOWN_SECONDS
-                            )
-                            _API_PROXY_PREFERRED_UNTIL = 0.0
-                            logger.warning(
-                                "WARP has failed to connect to 3rah %s times; "
-                                "bypassing WARP for %s seconds",
-                                _API_PROXY_CONSECUTIVE_FAILURES,
-                                _API_PROXY_COOLDOWN_SECONDS,
-                            )
-                        else:
-                            logger.warning(
-                                "WARP connection to 3rah failed; retrying directly"
-                            )
-                    else:
-                        if asyncio.get_running_loop().time() >= _API_PROXY_DISABLED_UNTIL:
-                            _API_PROXY_PREFERRED_UNTIL = (
-                                asyncio.get_running_loop().time()
-                                + _API_PROXY_PREFERENCE_SECONDS
-                            )
-                            api_proxy_override = True
-                            logger.warning(
-                                "Direct 3rah connection failed; failing over to WARP "
-                                "and preferring it for %s seconds",
-                                _API_PROXY_PREFERENCE_SECONDS,
-                            )
-                        else:
-                            api_proxy_override = False
-                            logger.warning(
-                                "Direct 3rah connection failed while WARP is in "
-                                "cooldown; continuing without WARP"
-                            )
+                if is_3rah:
+                    _pause_3rah_requests()
                 if i + 1 >= attempts:
                     logger.error("Final HTTP failure for %s: %s", url, e)
                     break

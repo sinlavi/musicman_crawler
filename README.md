@@ -36,7 +36,7 @@ An automated music crawler and Bale Messenger delivery service. **MusicMan** pro
                    │               MusicMan Distributed Crawlers            │
                    ├───────────────────┬───────────────────┬────────────────┤
                    │    Instance 1/3   │    Instance 2/3   │  Instance 3/3  │
-                   │ (download_id % 3) │ (download_id % 3) │(download_id % 3)│
+                   │   (trackId % 3)   │   (trackId % 3)   │  (trackId % 3) │
                    └─────────┬─────────┴─────────┬─────────┴────────┬───────┘
                              │                   │                  │
         ┌────────────────────┼───────────────────┼──────────────────┐
@@ -134,7 +134,8 @@ YouTube downloads use up to 8 parallel fragments per download, while
 retries transient failures and spaces requests by 1–6 seconds. API retries use
 exponential backoff, honor `Retry-After`, and wait at least 30 seconds if the API
 reports `max_user_connections`; repeated queue API failures are spaced by at
-least 10 seconds.
+least 10 seconds. After a 3rah connection failure, all 3rah requests share a
+60-second cooldown and retry without automatically switching proxy routes.
 
 ### GitHub Actions secrets
 

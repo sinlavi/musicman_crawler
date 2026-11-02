@@ -40,11 +40,6 @@ class FakeSession:
         return next(self.responses)
 
 
-class FailingSession:
-    def request(self, *args, **kwargs):
-        raise aiohttp.ServerDisconnectedError("connection reset by peer")
-
-
 def test_retry_delay_honors_retry_after_and_caps_it():
     assert _retry_delay(
         0, 2, status=429, headers={"Retry-After": "7"}
@@ -87,114 +82,83 @@ async def test_http_retry_uses_retry_after_and_releases_attempt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_3rah_connection_failure_fails_over_to_warp(monkeypatch):
-    warp_session = FakeSession([FakeResponse(200, data={"success": True})])
-    get_session = AsyncMock(side_effect=lambda use_proxy: (
-        warp_session if use_proxy else FailingSession()
-    ))
-    monkeypatch.setattr(HttpClient, "get_session", get_session)
-    monkeypatch.setattr("core.config.PROXY", "socks5h://127.0.0.1:1080")
-    monkeypatch.setattr(http_client, "_API_PROXY_PREFERRED_UNTIL", 0.0)
-    monkeypatch.setattr("core.http_client.asyncio.sleep", AsyncMock())
-
-    result = await HttpClient.request_with_methods(
-        "POST",
-        "https://mm.3rah.ir/api/download/update",
-        use_proxy=False,
-        max_attempts=2,
-        retry_delay_seconds=0,
-        json={"id": 123, "status": "completed"},
-    )
-
-    assert result == ({"success": True}, 200, False)
-    assert [
-        call.kwargs["use_proxy"] for call in get_session.await_args_list
-    ] == [False, True]
-
-
-@pytest.mark.asyncio
-async def test_3rah_prefers_warp_after_direct_connection_failure(monkeypatch):
-    warp_session = FakeSession([
-        FakeResponse(200, data={"success": True}),
-        FakeResponse(200, data={"success": True}),
-    ])
-    get_session = AsyncMock(side_effect=lambda use_proxy: (
-        warp_session if use_proxy else FailingSession()
-    ))
-    monkeypatch.setattr(HttpClient, "get_session", get_session)
-    monkeypatch.setattr("core.config.PROXY", "socks5h://127.0.0.1:1080")
-    monkeypatch.setattr(http_client, "_API_PROXY_PREFERRED_UNTIL", 0.0)
-    monkeypatch.setattr("core.http_client.asyncio.sleep", AsyncMock())
-
-    first = await HttpClient.request_with_methods(
-        "GET", "https://mm.3rah.ir/api/download/queue",
-        use_proxy=False, max_attempts=2, retry_delay_seconds=0,
-    )
-    second = await HttpClient.request_with_methods(
-        "GET", "https://mm.3rah.ir/api/download/queue",
-        use_proxy=False, max_attempts=1,
-    )
-
-    assert first == ({"success": True}, 200, False)
-    assert second == ({"success": True}, 200, False)
-    assert [
-        call.kwargs["use_proxy"] for call in get_session.await_args_list
-    ] == [False, True, True]
-
-
-@pytest.mark.asyncio
-async def test_3rah_bypasses_failing_warp_during_cooldown_and_recovers(monkeypatch):
+async def test_3rah_connection_failure_pauses_all_requests_without_switching_proxy(
+    monkeypatch,
+):
+    failed = asyncio.Event()
     transport_attempts = []
+    request_times = []
+    loop = asyncio.get_running_loop()
 
     def get_session(use_proxy):
         transport_attempts.append(use_proxy)
-        attempt = len(transport_attempts)
-        if attempt == 5:
-            return FakeSession([FakeResponse(200, data={"direct": True})])
-        if attempt == 7:
-            return FakeSession([FakeResponse(200, data={"warp": True})])
-        return FailingSession()
+        if len(transport_attempts) == 1:
+            class FailingSession:
+                def request(self, *args, **kwargs):
+                    request_times.append(loop.time())
+                    failed.set()
+                    raise aiohttp.ServerDisconnectedError(
+                        "connection reset by peer"
+                    )
 
-    monkeypatch.setattr(HttpClient, "get_session", AsyncMock(side_effect=get_session))
+            return FailingSession()
+
+        class SuccessSession:
+            def request(self, *args, **kwargs):
+                request_times.append(loop.time())
+                return FakeResponse(200, data={"success": True})
+
+        return SuccessSession()
+
+    monkeypatch.setattr(
+        HttpClient, "get_session", AsyncMock(side_effect=get_session)
+    )
     monkeypatch.setattr("core.config.PROXY", "socks5h://127.0.0.1:1080")
-    monkeypatch.setattr(http_client, "_API_PROXY_PREFERRED_UNTIL", 0.0)
-    monkeypatch.setattr(http_client, "_API_PROXY_CONSECUTIVE_FAILURES", 0)
-    monkeypatch.setattr(http_client, "_API_PROXY_DISABLED_UNTIL", 0.0)
-    monkeypatch.setattr("core.http_client.asyncio.sleep", AsyncMock())
+    monkeypatch.setattr(
+        http_client, "_API_REQUEST_COOLDOWN_SECONDS", 0.03
+    )
+    monkeypatch.setattr(http_client, "_API_REQUESTS_PAUSED_UNTIL", 0.0)
 
     request = {
         "method": "GET",
         "url": "https://mm.3rah.ir/api/download/queue",
         "use_proxy": False,
+        "max_attempts": 2,
         "retry_delay_seconds": 0,
     }
-    failed_once = await HttpClient.request_with_methods(
-        **request, max_attempts=2
-    )
-    failed_twice = await HttpClient.request_with_methods(
-        **request, max_attempts=2
-    )
-    direct_during_cooldown = await HttpClient.request_with_methods(
-        **request, max_attempts=1
-    )
+    first = asyncio.create_task(HttpClient.request_with_methods(**request))
+    await failed.wait()
+    second = asyncio.create_task(HttpClient.request_with_methods(
+        **{**request, "url": "https://mm.3rah.ir/api/download/update",
+           "max_attempts": 1}
+    ))
+    first_result, second_result = await asyncio.gather(first, second)
 
-    assert failed_once[2] is True
-    assert failed_twice[2] is True
-    assert direct_during_cooldown == ({"direct": True}, 200, False)
-    assert http_client._API_PROXY_DISABLED_UNTIL > (
+    assert first_result == ({"success": True}, 200, False)
+    assert second_result == ({"success": True}, 200, False)
+    assert min(request_times[1:]) - request_times[0] >= 0.025
+    assert transport_attempts == [False, False, False]
+    assert http_client._API_REQUESTS_PAUSED_UNTIL <= (
         asyncio.get_running_loop().time()
     )
-    assert transport_attempts == [False, True, True, False, False]
 
+
+@pytest.mark.asyncio
+async def test_3rah_cooldown_does_not_pause_other_hosts(monkeypatch):
+    session = FakeSession([FakeResponse(200, data={"ok": True})])
+    get_session = AsyncMock(return_value=session)
+    sleep = AsyncMock()
+    monkeypatch.setattr(HttpClient, "get_session", get_session)
+    monkeypatch.setattr("core.http_client.asyncio.sleep", sleep)
     monkeypatch.setattr(
         http_client,
-        "_API_PROXY_DISABLED_UNTIL",
-        asyncio.get_running_loop().time() - 1,
-    )
-    recovered = await HttpClient.request_with_methods(
-        **request, max_attempts=2
+        "_API_REQUESTS_PAUSED_UNTIL",
+        asyncio.get_running_loop().time() + 60,
     )
 
-    assert recovered == ({"warp": True}, 200, False)
-    assert transport_attempts[-2:] == [False, True]
-    assert http_client._API_PROXY_CONSECUTIVE_FAILURES == 0
+    result = await HttpClient.request_with_methods(
+        "GET", "https://example.test", use_proxy=False, max_attempts=1
+    )
+
+    assert result == ({"ok": True}, 200, False)
+    sleep.assert_not_awaited()

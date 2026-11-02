@@ -6,6 +6,7 @@ from main import (
     _merge_priority_items,
     _normalize_queue_items,
     _queue_priority,
+    _queue_items_for_instance,
 )
 
 def test_common_opts_socket_timeout():
@@ -91,6 +92,24 @@ def test_sharding_numeric_and_string_ids():
             if _belongs_to_instance(download_id, instance_id, total_instances)
         ]
         assert len(assignments) == 1
+
+
+def test_queue_sharding_uses_track_id_when_download_ids_share_one_remainder():
+    items = [
+        {"download_id": 22047, "trackId": "6808405499"},
+        {"download_id": 22041, "trackId": "6808405192"},
+        {"download_id": 22038, "trackId": "6808405197"},
+    ]
+
+    assigned = [
+        _queue_items_for_instance(items, instance_id, 3)
+        for instance_id in range(1, 4)
+    ]
+
+    assert [len(worker_items) for worker_items in assigned] == [1, 1, 1]
+    assert {item["download_id"] for worker_items in assigned for item in worker_items} == {
+        22047, 22041, 22038
+    }
 
 
 def test_non_numeric_sharding_is_stable():
