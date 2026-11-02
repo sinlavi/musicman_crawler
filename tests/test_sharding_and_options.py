@@ -1,6 +1,7 @@
 import pytest
-from crawlers.youtube import COMMON_OPTS, _build_opts
+from crawlers.youtube import COMMON_OPTS, _build_opts, _download_progress_percent
 from services.download_service import _is_file_too_large_error as is_large_download
+from main import _belongs_to_instance, _normalize_queue_items
 
 def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
@@ -11,19 +12,51 @@ def test_build_opts_includes_socket_timeout():
     assert "socket_timeout" in opts
     assert opts["socket_timeout"] == 20
 
+
+def test_download_progress_percent_uses_estimated_size_and_clamps():
+    assert _download_progress_percent({
+        "status": "downloading",
+        "downloaded_bytes": 25,
+        "total_bytes_estimate": 100,
+    }) == 25
+    assert _download_progress_percent({
+        "status": "downloading",
+        "downloaded_bytes": 150,
+        "total_bytes": 100,
+    }) == 100
+    assert _download_progress_percent({"status": "finished"}) is None
+
+
+def test_normalize_queue_items_accepts_track_id_keyed_mapping():
+    item = {"download_id": 24541, "download_status": "downloading"}
+    normalized = _normalize_queue_items({"1674218402": item})
+
+    assert normalized == [{
+        "download_id": 24541,
+        "download_status": "downloading",
+        "trackId": "1674218402",
+    }]
+    assert item.get("trackId") is None
+
+
 def test_sharding_numeric_and_string_ids():
     total_instances = 3
 
     test_ids = [101, "102", "item_xyz_123", 0, "456"]
 
     for download_id in test_ids:
-        try:
-            numeric_id = int(download_id)
-        except (ValueError, TypeError):
-            numeric_id = abs(hash(str(download_id)))
+        assignments = [
+            instance_id
+            for instance_id in range(1, total_instances + 1)
+            if _belongs_to_instance(download_id, instance_id, total_instances)
+        ]
+        assert len(assignments) == 1
 
-        assigned_instance = (numeric_id % total_instances) + 1
-        assert 1 <= assigned_instance <= total_instances
+
+def test_non_numeric_sharding_is_stable():
+    assert _belongs_to_instance("item_xyz_123", 1, 3) == _belongs_to_instance(
+        "item_xyz_123", 1, 3
+    )
 
 def test_file_too_large_error_matching():
     errors = [

@@ -337,7 +337,32 @@ class DownloadService:
                                                        f"⏳ *در حال دانلود با کیفیت {quality_value}kbps...*",
                                                        status_prefix, is_batch, silent=silent)
                 logger.info(f"Downloading from YouTube: {video_url} with quality {quality_value}")
-                mp3_path = await download_audio(video_url, quality=quality_value)
+                progress_queue = asyncio.Queue()
+                loop = asyncio.get_running_loop()
+
+                def queue_progress(percent):
+                    loop.call_soon_threadsafe(progress_queue.put_nowait, percent)
+
+                async def publish_download_progress():
+                    last_percent = 40
+                    while True:
+                        percent = await progress_queue.get()
+                        if percent is None:
+                            return
+                        current_percent = min(69, 40 + int(percent * 0.29))
+                        if download_id and current_percent >= last_percent + 5:
+                            await update_download_status(
+                                download_id, "downloading", percent=current_percent)
+                            last_percent = current_percent
+
+                progress_task = asyncio.create_task(publish_download_progress())
+                try:
+                    mp3_path = await download_audio(
+                        video_url, quality=quality_value,
+                        progress_callback=queue_progress)
+                finally:
+                    progress_queue.put_nowait(None)
+                    await progress_task
                 if not mp3_path:
                     raise Exception("Download failed")
                 temp_dir = os.path.dirname(mp3_path)

@@ -11,7 +11,7 @@ import tempfile
 import uuid
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import asyncio
 import yt_dlp
@@ -507,6 +507,7 @@ async def download_audio(
         *,
         max_retries_per_method: int = 1,
         quality: int = 128,
+        progress_callback: Optional[Callable[[float], None]] = None,
 ) -> Optional[str]:
     """
     Download YouTube audio as MP3.
@@ -539,6 +540,13 @@ async def download_audio(
             logger.info("▶ Try Method %d (Attempt %d, Proxy: %s)", method, attempt, use_proxy)
             try:
                 opts = _build_opts(method, unique_dir, preferred_quality, use_proxy=use_proxy)
+                if progress_callback:
+                    def report_progress(status: dict) -> None:
+                        percent = _download_progress_percent(status)
+                        if percent is not None:
+                            progress_callback(percent)
+
+                    opts["progress_hooks"] = [report_progress]
 
                 def run_ydl():
                     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -590,6 +598,16 @@ async def download_audio(
 def _is_youtube_rate_limit_error(error: BaseException) -> bool:
     message = str(error).lower()
     return "rate-limited" in message or "rate limit" in message or "too many requests" in message
+
+
+def _download_progress_percent(status: dict) -> Optional[float]:
+    if status.get("status") != "downloading":
+        return None
+    total = status.get("total_bytes") or status.get("total_bytes_estimate")
+    downloaded = status.get("downloaded_bytes")
+    if not total or downloaded is None:
+        return None
+    return min(100.0, max(0.0, downloaded * 100.0 / total))
 
 
 async def _activate_youtube_cooldown() -> None:

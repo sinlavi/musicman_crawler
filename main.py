@@ -22,9 +22,11 @@ from crawlers.itunes import get_download_queue, update_download_status, reset_st
 from crawlers.youtube import youtube_rate_limit_triggered
 
 import asyncio
+import hashlib
 import signal
 import sys
 import time
+from collections import deque
 
 # Environment variables for sharding and runtime control
 INSTANCE_ID = int(os.getenv("INSTANCE_ID", "1"))
@@ -36,6 +38,16 @@ START_TIME = time.time()
 TARGET_CHANNEL_ID = TARGET_CHAT_ID
 MAX_CONSECUTIVE_QUEUE_ERRORS = 3
 QUEUE_ERROR_RETRY_DELAY_SECONDS = API_RETRY_DELAY_SECONDS
+
+
+def _belongs_to_instance(download_id, instance_id=INSTANCE_ID, total_instances=TOTAL_INSTANCES):
+    try:
+        numeric_id = int(download_id)
+    except (ValueError, TypeError):
+        digest = hashlib.sha256(str(download_id).encode("utf-8")).digest()
+        numeric_id = int.from_bytes(digest[:8], "big")
+    return numeric_id % total_instances == instance_id - 1
+
 
 def _queue_telegram_file(item):
     direct = {
@@ -57,6 +69,24 @@ def _queue_telegram_file(item):
                 direct = candidate
                 break
     return {k: str(v) for k, v in direct.items() if v}
+
+
+def _normalize_queue_items(items):
+    if isinstance(items, dict):
+        normalized = []
+        for track_id, item in items.items():
+            if not isinstance(item, dict):
+                logger.warning("Skipping malformed queue item for track %s", track_id)
+                continue
+            item = dict(item)
+            item.setdefault("trackId", track_id)
+            normalized.append(item)
+        return normalized
+    if isinstance(items, list):
+        return [item for item in items if isinstance(item, dict)]
+    logger.warning("Ignoring queue items with unsupported format: %s", type(items).__name__)
+    return []
+
 
 async def process_queue_item(bot, item, download_service, user_id, active_tasks, task_done_event=None):
     download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
@@ -151,6 +181,7 @@ async def run_crawler():
 
         active_tasks = set()
         processing_tasks = {}
+        pending_batch = deque()
         consecutive_tech_errors = 0
         task_done_event = asyncio.Event()
 
@@ -171,10 +202,10 @@ async def run_crawler():
                         await asyncio.sleep(10)
                 break
 
-            # Calculate available slots
-            available_slots = MAX_CONCURRENT_TASKS - len(active_tasks)
-
-            if available_slots <= 0:
+            # Finish the current batch before requesting the next page.
+            if active_tasks and (
+                not pending_batch or len(active_tasks) >= MAX_CONCURRENT_TASKS
+            ):
                 # Worker pool full, wait for any active task to finish
                 task_done_event.clear()
                 try:
@@ -184,97 +215,100 @@ async def run_crawler():
                 continue
 
             try:
-                # Poll for pending downloads to fill open slots
-                fetch_limit = max(available_slots * 10, QUEUE_BATCH_SIZE)
-                queue_resp = await get_download_queue(status="pending", limit=fetch_limit)
-
-                # Check for technical error
-                if queue_resp is None:
-                    consecutive_tech_errors += 1
-                    logger.warning(
-                        "Queue API technical error (%s/%s)",
-                        consecutive_tech_errors,
-                        MAX_CONSECUTIVE_QUEUE_ERRORS,
+                if not pending_batch:
+                    queue_resp = await get_download_queue(
+                        status="pending", limit=QUEUE_BATCH_SIZE
                     )
-                    if consecutive_tech_errors >= MAX_CONSECUTIVE_QUEUE_ERRORS:
-                        await restart_worker(
-                            processing_tasks, "Repeated queue API failures.", update_download_status
-                        )
-                    await asyncio.sleep(QUEUE_ERROR_RETRY_DELAY_SECONDS)
-                    continue
 
-                if not queue_resp.get("success"):
-                    consecutive_tech_errors += 1
-                    logger.warning(
-                        "Queue API returned an unsuccessful response (%s/%s)",
-                        consecutive_tech_errors,
-                        MAX_CONSECUTIVE_QUEUE_ERRORS,
+                    if queue_resp is None:
+                        consecutive_tech_errors += 1
+                        logger.warning(
+                            "Queue API technical error (%s/%s)",
+                            consecutive_tech_errors,
+                            MAX_CONSECUTIVE_QUEUE_ERRORS,
+                        )
+                        if consecutive_tech_errors >= MAX_CONSECUTIVE_QUEUE_ERRORS:
+                            await restart_worker(
+                                processing_tasks,
+                                "Repeated queue API failures.",
+                                update_download_status,
+                            )
+                        await asyncio.sleep(QUEUE_ERROR_RETRY_DELAY_SECONDS)
+                        continue
+
+                    if not queue_resp.get("success"):
+                        consecutive_tech_errors += 1
+                        logger.warning(
+                            "Queue API returned an unsuccessful response (%s/%s)",
+                            consecutive_tech_errors,
+                            MAX_CONSECUTIVE_QUEUE_ERRORS,
+                        )
+                        if consecutive_tech_errors >= MAX_CONSECUTIVE_QUEUE_ERRORS:
+                            await restart_worker(
+                                processing_tasks,
+                                "Repeated unsuccessful queue responses.",
+                                update_download_status,
+                            )
+                        await asyncio.sleep(QUEUE_ERROR_RETRY_DELAY_SECONDS)
+                        continue
+
+                    consecutive_tech_errors = 0
+                    pending_batch.extend(
+                        _normalize_queue_items(queue_resp.get("items", []))
                     )
-                    if consecutive_tech_errors >= MAX_CONSECUTIVE_QUEUE_ERRORS:
-                        await restart_worker(
-                            processing_tasks,
-                            "Repeated unsuccessful queue responses.",
-                            update_download_status,
-                        )
-                    await asyncio.sleep(QUEUE_ERROR_RETRY_DELAY_SECONDS)
-                    continue
-
-                # Reset error counter on any non-technical response
-                consecutive_tech_errors = 0
-
-                if not queue_resp.get("items"):
-                    logger.debug("No pending downloads found. Sleeping briefly...")
-                    if active_tasks:
-                        task_done_event.clear()
-                        try:
-                            await asyncio.wait_for(task_done_event.wait(), timeout=3.0)
-                        except asyncio.TimeoutError:
-                            pass
-                    else:
+                    if not pending_batch:
+                        logger.debug("No pending downloads found. Sleeping briefly...")
                         await asyncio.sleep(5)
-                    continue
+                        continue
 
-                items = queue_resp.get("items", [])
                 user_id = 234591600
                 tasks_started = 0
 
-                for item in items:
-                    if len(active_tasks) >= MAX_CONCURRENT_TASKS:
-                        break
-
-                    download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
+                while pending_batch and len(active_tasks) < MAX_CONCURRENT_TASKS:
+                    item = pending_batch.popleft()
+                    download_id = (
+                        item.get("download_id")
+                        or item.get("downloadId")
+                        or item.get("id")
+                    )
                     if download_id is None:
                         continue
 
+                    status = str(
+                        item.get("download_status") or item.get("status") or ""
+                    ).lower()
                     try:
-                        numeric_id = int(download_id)
-                    except (ValueError, TypeError):
-                        numeric_id = abs(hash(str(download_id)))
-
-                    # Sharding logic: only process items that belong to this instance
-                    if numeric_id % TOTAL_INSTANCES != (INSTANCE_ID - 1):
+                        percent = float(item.get("percent") or 0)
+                    except (TypeError, ValueError):
+                        percent = 0
+                    if status == "completed" or percent >= 100:
+                        await update_download_status(download_id, "completed", percent=100)
+                        continue
+                    if status in {"downloading", "failed", "stopped"}:
                         continue
 
+                    if not _belongs_to_instance(download_id):
+                        continue
                     if download_id in active_tasks:
                         continue
 
                     active_tasks.add(download_id)
                     tasks_started += 1
                     task = asyncio.create_task(
-                        process_queue_item(bot, item, download_service, user_id, active_tasks, task_done_event)
+                        process_queue_item(
+                            bot,
+                            item,
+                            download_service,
+                            user_id,
+                            active_tasks,
+                            task_done_event,
+                        )
                     )
                     processing_tasks[task] = download_id
                     task.add_done_callback(processing_tasks.pop)
 
-                if tasks_started == 0:
-                    if active_tasks:
-                        task_done_event.clear()
-                        try:
-                            await asyncio.wait_for(task_done_event.wait(), timeout=2.0)
-                        except asyncio.TimeoutError:
-                            pass
-                    else:
-                        await asyncio.sleep(5)
+                if tasks_started == 0 and not pending_batch and not active_tasks:
+                    await asyncio.sleep(5)
 
             except Exception as e:
                 logger.exception(f"Crawler loop error: {e}")

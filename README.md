@@ -119,8 +119,10 @@ OFFLINE_MODE=False
 
 `MAX_CONCURRENT_TASKS` controls how many queue items each worker processes at once.
 `YOUTUBE_CONCURRENCY` limits simultaneous YouTube downloads, and
-`QUEUE_BATCH_SIZE` controls the minimum number of pending items requested per queue poll.
-Tune these values carefully if the remote APIs or worker host have lower capacity.
+`QUEUE_BATCH_SIZE` controls the maximum number of pending items requested per batch.
+Each worker drains its current batch before requesting the next one and continues
+automatically, while respecting its concurrency limit. Tune these values carefully
+if the remote APIs or worker host have lower capacity.
 
 ### GitHub Actions secrets
 

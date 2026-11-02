@@ -29,17 +29,24 @@ def _load_cookies_as_header(cookie_file):
 class LyricsService:
     def __init__(self):
         cookies_path = COOKIES_FILE
-        cookie_header = _load_cookies_as_header(cookies_path)
-
-        self.ytm_proxied = YTMusic(proxies={"https": PROXY, "http": PROXY})
-        self.ytm_direct = YTMusic()
-
-        if cookie_header:
-            logger.info("Adding Cookie header from: cookies.txt")
-            self.ytm_proxied.headers["Cookie"] = cookie_header
-            self.ytm_direct.headers["Cookie"] = cookie_header
-
+        self._cookie_header = _load_cookies_as_header(cookies_path)
+        self._ytm_proxied = None
+        self._ytm_direct = None
         self._executor = ThreadPoolExecutor(max_workers=5)
+
+    def _get_ytmusic_client(self, use_proxy):
+        attribute = "_ytm_proxied" if use_proxy else "_ytm_direct"
+        client = getattr(self, attribute)
+        if client is None:
+            if use_proxy:
+                client = YTMusic(proxies={"https": PROXY, "http": PROXY})
+            else:
+                client = YTMusic()
+            if self._cookie_header:
+                logger.info("Adding Cookie header from: cookies.txt")
+                client.headers["Cookie"] = self._cookie_header
+            setattr(self, attribute, client)
+        return client
 
     async def get_lyrics(self, track_id, title, artist, album=None, duration_ms=0):
         """
@@ -217,7 +224,7 @@ class LyricsService:
         for i, ua in enumerate(uas):
             try:
                 use_proxy = (i % 2 == 0) if PROXY else False
-                ytm = self.ytm_proxied if use_proxy else self.ytm_direct
+                ytm = self._get_ytmusic_client(use_proxy)
 
                 ytm.headers["User-Agent"] = ua
                 loop = asyncio.get_event_loop()

@@ -11,6 +11,12 @@ from services.lyrics_service import LyricsService
 from core.http_client import HttpClient
 
 class TestLyricsPlaceholder(unittest.IsolatedAsyncioTestCase):
+    def test_ytmusic_clients_are_created_only_when_needed(self):
+        with patch.object(lyrics_module, "YTMusic") as mock_ytmusic:
+            LyricsService()
+
+        mock_ytmusic.assert_not_called()
+
     @patch('services.lyrics_service.LyricsService._fetch_from_lrclib')
     @patch('services.lyrics_service.LyricsService._fetch_from_ytmusic')
     async def test_lyrics_placeholder(self, mock_ytm, mock_lrclib):
