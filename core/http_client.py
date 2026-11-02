@@ -5,10 +5,23 @@ import logging
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Optional, Tuple, Any, List
+from urllib.parse import urlsplit
 from aiohttp_socks import ProxyConnector
-from core.config import USER_AGENTS
+from core.config import API_BASE_URL, ITUNES_BASE_URL, USER_AGENTS
 
 logger = logging.getLogger("HttpClient")
+_API_PROXY_PREFERENCE_SECONDS = 5 * 60
+_API_PROXY_PREFERRED_UNTIL = 0.0
+
+
+def _is_3rah_request(url: str) -> bool:
+    host = urlsplit(url).hostname
+    configured_hosts = {
+        urlsplit(base_url).hostname
+        for base_url in (API_BASE_URL, ITUNES_BASE_URL)
+        if base_url
+    }
+    return host == "mm.3rah.ir" or host in configured_hosts
 
 
 def _retry_delay(
@@ -102,9 +115,12 @@ class HttpClient:
         Executes a request using multiple methods (different User-Agents and toggling proxy).
         Returns (data, status_code, is_technical_error).
         """
+        global _API_PROXY_PREFERRED_UNTIL
         from core.config import PROXY
         headers = kwargs.pop('headers', {}).copy()
         last_status = 0
+        is_3rah = _is_3rah_request(url)
+        api_proxy_override = None
 
         uas = list(USER_AGENTS)
         random.shuffle(uas)
@@ -113,9 +129,17 @@ class HttpClient:
         for i in range(attempts):
             ua = uas[i % len(uas)]
             headers['User-Agent'] = headers.get('User-Agent') or ua
-            # API callers can force direct transport; other callers retain proxy fallback.
-            attempt_proxy = use_proxy and PROXY and i % 2 == 0
-            session = await cls.get_session(use_proxy=bool(attempt_proxy))
+            if is_3rah:
+                proxy_preferred = asyncio.get_running_loop().time() < _API_PROXY_PREFERRED_UNTIL
+                if api_proxy_override is not None:
+                    attempt_proxy = bool(PROXY) and api_proxy_override
+                elif proxy_preferred:
+                    attempt_proxy = bool(PROXY)
+                else:
+                    attempt_proxy = bool(PROXY) and use_proxy and i % 2 == 0
+            else:
+                # Non-3rah callers retain the existing transport selection.
+                attempt_proxy = use_proxy and PROXY and i % 2 == 0
 
             # For HTTP proxies in direct session, we still might want to pass it?
             # No, if use_proxy is False we want direct.
@@ -123,6 +147,7 @@ class HttpClient:
 
             retry_delay = None
             try:
+                session = await cls.get_session(use_proxy=bool(attempt_proxy))
                 async with cls._request_semaphore:
                     response_context = session.request(
                         method, url, headers=headers, proxy=current_proxy,
@@ -134,10 +159,16 @@ class HttpClient:
                                 data = await resp.json()
                             except (aiohttp.ContentTypeError, ValueError):
                                 data = await resp.read()
+                            if is_3rah and not attempt_proxy:
+                                _API_PROXY_PREFERRED_UNTIL = 0.0
                             return data, resp.status, False
 
                         if resp.status == 404:
+                            if is_3rah and not attempt_proxy:
+                                _API_PROXY_PREFERRED_UNTIL = 0.0
                             return None, 404, False
+                        if is_3rah and not attempt_proxy:
+                            _API_PROXY_PREFERRED_UNTIL = 0.0
 
                         if resp.status in (408, 425, 429) or resp.status >= 500:
                             body = await resp.text()
@@ -167,6 +198,23 @@ class HttpClient:
                             continue
 
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                if is_3rah and PROXY:
+                    if attempt_proxy:
+                        api_proxy_override = False
+                        logger.warning(
+                            "WARP connection to 3rah failed; retrying directly"
+                        )
+                    else:
+                        _API_PROXY_PREFERRED_UNTIL = (
+                            asyncio.get_running_loop().time()
+                            + _API_PROXY_PREFERENCE_SECONDS
+                        )
+                        api_proxy_override = True
+                        logger.warning(
+                            "Direct 3rah connection failed; failing over to WARP "
+                            "and preferring it for %s seconds",
+                            _API_PROXY_PREFERENCE_SECONDS,
+                        )
                 if i + 1 >= attempts:
                     logger.error("Final HTTP failure for %s: %s", url, e)
                     break
