@@ -1,6 +1,7 @@
 from core.config import (
     BALE_TOKEN, API_BASE_URL, API_TOKEN, API_RETRY_DELAY_SECONDS, PROXY, TARGET_CHAT_ID, DEFAULT_QUALITY,
     TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, MAX_CONCURRENT_TASKS, QUEUE_BATCH_SIZE,
+    QUEUE_PRIORITY_POLL_SECONDS,
 )
 import os
 
@@ -55,6 +56,37 @@ def _queue_priority(item):
     except (TypeError, ValueError):
         logger.warning("Ignoring invalid queue priority: %r", item.get("priority"))
         return 0
+
+
+def _queue_download_id(item):
+    return item.get("download_id") or item.get("downloadId") or item.get("id")
+
+
+def _merge_priority_items(pending_batch, incoming_items, active_download_ids):
+    queued_items = {
+        _queue_download_id(item): item
+        for item in pending_batch
+        if _queue_download_id(item) is not None
+        and _queue_download_id(item) not in active_download_ids
+    }
+
+    for item in incoming_items:
+        download_id = _queue_download_id(item)
+        status = str(item.get("download_status") or item.get("status") or "").lower()
+        if (
+            download_id is None
+            or download_id in active_download_ids
+            or status in {"completed", "downloading", "failed", "stopped"}
+            or _queue_priority(item) <= 0
+        ):
+            continue
+        queued_items[download_id] = item
+
+    return deque(sorted(
+        queued_items.values(),
+        key=_queue_priority,
+        reverse=True,
+    ))
 
 
 def _queue_telegram_file(item):
@@ -192,6 +224,7 @@ async def run_crawler():
         pending_batch = deque()
         consecutive_tech_errors = 0
         task_done_event = asyncio.Event()
+        last_queue_poll = 0.0
 
         while True:
             if youtube_rate_limit_triggered():
@@ -210,23 +243,19 @@ async def run_crawler():
                         await asyncio.sleep(10)
                 break
 
-            # Finish the current batch before requesting the next page.
-            if active_tasks and (
-                not pending_batch or len(active_tasks) >= MAX_CONCURRENT_TASKS
-            ):
-                # Worker pool full, wait for any active task to finish
-                task_done_event.clear()
-                try:
-                    await asyncio.wait_for(task_done_event.wait(), timeout=2.0)
-                except asyncio.TimeoutError:
-                    pass
-                continue
-
             try:
-                if not pending_batch:
+                polling_priority = bool(active_tasks)
+                queue_poll_due = (
+                    time.monotonic() - last_queue_poll
+                    >= QUEUE_PRIORITY_POLL_SECONDS
+                )
+                fetch_initial_batch = not active_tasks and not pending_batch
+
+                if fetch_initial_batch or (polling_priority and queue_poll_due):
                     queue_resp = await get_download_queue(
                         status="pending", limit=QUEUE_BATCH_SIZE
                     )
+                    last_queue_poll = time.monotonic()
 
                     if queue_resp is None:
                         consecutive_tech_errors += 1
@@ -261,14 +290,20 @@ async def run_crawler():
                         continue
 
                     consecutive_tech_errors = 0
-                    pending_batch.extend(
-                        sorted(
-                            _normalize_queue_items(queue_resp.get("items", [])),
-                            key=_queue_priority,
-                            reverse=True,
+                    queue_items = _normalize_queue_items(queue_resp.get("items", []))
+                    if polling_priority:
+                        pending_batch = _merge_priority_items(
+                            pending_batch, queue_items, active_tasks
                         )
-                    )
-                    if not pending_batch:
+                    else:
+                        pending_batch.extend(
+                            sorted(
+                                queue_items,
+                                key=_queue_priority,
+                                reverse=True,
+                            )
+                        )
+                    if not pending_batch and not active_tasks:
                         logger.debug("No pending downloads found. Sleeping briefly...")
                         await asyncio.sleep(5)
                         continue
@@ -278,11 +313,7 @@ async def run_crawler():
 
                 while pending_batch and len(active_tasks) < MAX_CONCURRENT_TASKS:
                     item = pending_batch.popleft()
-                    download_id = (
-                        item.get("download_id")
-                        or item.get("downloadId")
-                        or item.get("id")
-                    )
+                    download_id = _queue_download_id(item)
                     if download_id is None:
                         continue
 
@@ -321,6 +352,22 @@ async def run_crawler():
 
                 if tasks_started == 0 and not pending_batch and not active_tasks:
                     await asyncio.sleep(5)
+                elif active_tasks and (
+                    not pending_batch or len(active_tasks) >= MAX_CONCURRENT_TASKS
+                ):
+                    task_done_event.clear()
+                    wait_time = max(
+                        0.1,
+                        QUEUE_PRIORITY_POLL_SECONDS
+                        - (time.monotonic() - last_queue_poll),
+                    )
+                    try:
+                        await asyncio.wait_for(
+                            task_done_event.wait(),
+                            timeout=wait_time,
+                        )
+                    except asyncio.TimeoutError:
+                        pass
 
             except Exception as e:
                 logger.exception(f"Crawler loop error: {e}")

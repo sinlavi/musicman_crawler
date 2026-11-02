@@ -111,6 +111,7 @@ TOTAL_INSTANCES=1
 MAX_CONCURRENT_TASKS=15
 YOUTUBE_CONCURRENCY=3
 QUEUE_BATCH_SIZE=250
+QUEUE_PRIORITY_POLL_SECONDS=3
 
 # Optional Proxy Setup
 proxy=socks5h://127.0.0.1:1080
@@ -123,6 +124,10 @@ OFFLINE_MODE=False
 Each worker drains its current batch before requesting the next one and continues
 automatically, while respecting its concurrency limit. Tune these values carefully
 if the remote APIs or worker host have lower capacity.
+While a batch is running, workers recheck the pending queue every
+`QUEUE_PRIORITY_POLL_SECONDS` and insert newly arrived items with priority above
+zero ahead of unstarted tracks. This setting defaults to 3 seconds and cannot be
+lowered below 1 second.
 
 ### GitHub Actions secrets
 
