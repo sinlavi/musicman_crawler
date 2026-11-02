@@ -78,29 +78,12 @@ jobs:
           ffprobe -version | head -n 1
           ffmpeg -f lavfi -i nullsrc=s=32x32:d=0.1 -f null - >/dev/null 2>&1
 
-      - name: Cache WARP Docker image
-        id: cache-warp
-        uses: actions/cache@v4
-        with:
-          path: /tmp/warp-image.tar
-          key: warp-image-caomingjun-warp-${{ runner.os }}-v1
-          restore-keys: |
-            warp-image-caomingjun-warp-${{ runner.os }}-
-
-      - name: Load cached WARP image
-        if: steps.cache-warp.outputs.cache-hit == 'true'
-        run: docker load --input /tmp/warp-image.tar
-
-      - name: Pull and cache WARP image
-        if: steps.cache-warp.outputs.cache-hit != 'true'
-        run: |
-          docker pull caomingjun/warp
-          docker save caomingjun/warp --output /tmp/warp-image.tar
+      - name: Pull fresh WARP image
+        run: docker pull caomingjun/warp:latest
 
       - name: Start Cloudflare WARP proxy
         run: |
           docker rm -f warp 2>/dev/null || true
-          docker volume rm warp-data 2>/dev/null || true
           docker network inspect warp-net >/dev/null 2>&1 || docker network create warp-net
           docker run -d \
             --name warp \
@@ -110,7 +93,6 @@ jobs:
             --cap-add NET_ADMIN \
             --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-            -v warp-data:/var/lib/cloudflare-warp \
             caomingjun/warp
           for attempt in {1..30}; do
             if curl -x socks5h://127.0.0.1:1080 \
