@@ -49,6 +49,14 @@ def _belongs_to_instance(download_id, instance_id=INSTANCE_ID, total_instances=T
     return numeric_id % total_instances == instance_id - 1
 
 
+def _queue_priority(item):
+    try:
+        return float(item.get("priority") or 0)
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid queue priority: %r", item.get("priority"))
+        return 0
+
+
 def _queue_telegram_file(item):
     direct = {
         "path": item.get("telegramFilePath") or item.get("telegram_file_path"),
@@ -254,7 +262,11 @@ async def run_crawler():
 
                     consecutive_tech_errors = 0
                     pending_batch.extend(
-                        _normalize_queue_items(queue_resp.get("items", []))
+                        sorted(
+                            _normalize_queue_items(queue_resp.get("items", [])),
+                            key=_queue_priority,
+                            reverse=True,
+                        )
                     )
                     if not pending_batch:
                         logger.debug("No pending downloads found. Sleeping briefly...")

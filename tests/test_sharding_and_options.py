@@ -1,7 +1,7 @@
 import pytest
 from crawlers.youtube import COMMON_OPTS, _build_opts, _download_progress_percent
 from services.download_service import _is_file_too_large_error as is_large_download
-from main import _belongs_to_instance, _normalize_queue_items
+from main import _belongs_to_instance, _normalize_queue_items, _queue_priority
 
 def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
@@ -37,6 +37,19 @@ def test_normalize_queue_items_accepts_track_id_keyed_mapping():
         "trackId": "1674218402",
     }]
     assert item.get("trackId") is None
+
+
+def test_queue_priority_orders_high_tracks_ahead_of_regular_batch_items():
+    items = [
+        {"download_id": 1, "priority": 0},
+        {"download_id": 2, "priority": 100},
+        {"download_id": 3, "priority": "25"},
+        {"download_id": 4},
+    ]
+
+    ordered = sorted(items, key=_queue_priority, reverse=True)
+
+    assert [item["download_id"] for item in ordered] == [2, 3, 1, 4]
 
 
 def test_sharding_numeric_and_string_ids():
