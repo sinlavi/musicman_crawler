@@ -16,7 +16,7 @@ An automated music crawler and Bale Messenger delivery service. **MusicMan** pro
 - ⚡ **Distributed Sharding & Queue Polling:** Scalable multi-instance execution using deterministic modulo task distribution across runner instances.
 - 🎨 **Rich Metadata & HD Artwork Tagging:** Automatically injects artist, album, title, release year, genre, and high-resolution album artwork into ID3/MP3 tags.
 - 🎼 **Lyrics:** Uses LRCLIB first and YouTube Music when LRCLIB has no lyrics.
-- 📤 **Bale Delivery:** Uploads the tagged audio file without a message caption; long tracks retain the additional 192 kbps upload.
+- 📤 **Bale and Telegram Delivery:** Uploads tagged audio to Bale and Telegram; Telegram posts include a formatted track caption, and long tracks retain the additional 192 kbps upload.
 - 🔄 **Automatic Recovery & Rate Limiting:** Self-healing polling loop that automatically rescues stuck/interrupted downloads and prevents rate limiting via exponential backoff.
 - 🌐 **Cloudflare WARP Proxy Support:** Built-in proxy routing (SOCKS5/HTTP) for bypassing geo-restrictions and network rate limits.
 - 📝 **Lyrics Integration:** Synchronized and plain text lyrics retrieval and tagging for enhanced user experience.
@@ -129,6 +129,9 @@ While a batch is running, workers recheck the pending queue every
 zero ahead of unstarted tracks. This setting defaults to 3 seconds and cannot be
 lowered below 1 second.
 
+YouTube search, metadata lookup, lyrics fallback, and downloads use the configured
+WARP proxy instead of retrying directly, avoiding unproxied YouTube requests that
+can trigger HTTP 403 responses. The worker workflow stops if WARP is unavailable.
 YouTube downloads use up to 8 parallel fragments per download, while
 `YOUTUBE_CONCURRENCY` still limits the number of simultaneous downloads. yt-dlp
 retries transient failures and spaces requests by 1–6 seconds. API retries use

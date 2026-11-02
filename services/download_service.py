@@ -418,7 +418,9 @@ class DownloadService:
                         return
                     telegram_message = await self.telegram.upload_audio(
                         path, title, duration_sec, performer=artist_name,
-                        artwork=cover_bytes)
+                        artwork=cover_bytes,
+                        caption=self.telegram.build_track_caption(
+                            track, duration_sec, quality))
                     telegram_audio = telegram_message.get("audio") or {}
                     telegram_file_id = telegram_audio.get("file_id")
                     telegram_message_id = telegram_message.get("message_id")

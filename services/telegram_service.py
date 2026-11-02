@@ -1,3 +1,4 @@
+import html
 import os
 from urllib.parse import urlparse
 from io import BytesIO
@@ -35,12 +36,16 @@ class TelegramUploadService:
 
     async def upload_audio(self, path: str, title: str, duration: Optional[int],
                            performer: Optional[str] = None,
-                           artwork: Optional[bytes] = None) -> dict:
+                           artwork: Optional[bytes] = None,
+                           caption: Optional[str] = None) -> dict:
         if not self.enabled:
             raise RuntimeError("Telegram upload is not configured")
         form = aiohttp.FormData()
         form.add_field("chat_id", str(self.chat_id))
         form.add_field("title", title)
+        if caption:
+            form.add_field("caption", caption)
+            form.add_field("parse_mode", "HTML")
         if performer:
             form.add_field("performer", performer)
         if duration is not None:
@@ -53,6 +58,53 @@ class TelegramUploadService:
             form.add_field("audio", audio, filename=os.path.basename(path),
                            content_type="audio/mpeg")
             return await self._request("sendAudio", form=form)
+
+    @staticmethod
+    def build_track_caption(track: dict, duration: Optional[int],
+                            quality: str) -> str:
+        max_length = 1024
+        footer = "\n\n@musicman_official\n@musicman_official_bot"
+        lines = []
+
+        def append_field(
+            emoji: str, label: str, value: object, value_limit: int = 100
+        ) -> None:
+            if value is None or value == "":
+                return
+            prefix = f"{emoji} <b>{label}:</b> "
+            remaining = min(
+                value_limit,
+                max_length - len(footer) - sum(map(len, lines)) - len(prefix) - 1,
+            )
+            if remaining <= 0:
+                return
+            escaped = ""
+            for char in str(value):
+                encoded = html.escape(char, quote=False)
+                if len(escaped) + len(encoded) > remaining:
+                    break
+                escaped += encoded
+            if escaped:
+                lines.append(prefix + escaped)
+
+        append_field("🎵", "Title", track.get("trackName") or "Unknown", 180)
+        append_field("🎤", "Artist", track.get("artistName"), 120)
+        title = track.get("trackName")
+        album = track.get("collectionName")
+        if album and album != title:
+            append_field("💿", "Album", album, 160)
+        release_date = str(track.get("releaseDate") or "")
+        if release_date[:4].isdigit():
+            append_field("📅", "Release", release_date[:4], 4)
+        append_field("🎸", "Genre", track.get("primaryGenreName"), 100)
+        if duration is not None:
+            append_field(
+                "⏱️", "Duration", f"{duration // 60:02d}:{duration % 60:02d}", 8
+            )
+        append_field("📀", "Quality", f"{quality} kbps", 16)
+
+        caption = "\n".join(lines) + footer
+        return caption[:max_length]
 
     @staticmethod
     def _prepare_thumbnail(artwork: Optional[bytes]) -> Optional[bytes]:

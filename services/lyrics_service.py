@@ -223,7 +223,7 @@ class LyricsService:
         last_error = None
         for i, ua in enumerate(uas):
             try:
-                use_proxy = (i % 2 == 0) if PROXY else False
+                use_proxy = bool(PROXY)
                 ytm = self._get_ytmusic_client(use_proxy)
 
                 ytm.headers["User-Agent"] = ua

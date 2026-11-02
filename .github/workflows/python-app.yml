@@ -83,6 +83,7 @@ jobs:
 
       - name: Start Cloudflare WARP proxy
         run: |
+          set -euo pipefail
           docker rm -f warp 2>/dev/null || true
           docker network inspect warp-net >/dev/null 2>&1 || docker network create warp-net
           docker run -d \
@@ -94,19 +95,25 @@ jobs:
             --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             --sysctl net.ipv4.conf.all.src_valid_mark=1 \
             caomingjun/warp
+          warp_ready=false
           for attempt in {1..30}; do
             if curl -x socks5h://127.0.0.1:1080 \
               https://cloudflare.com/cdn-cgi/trace --max-time 5 --silent |
               grep -q "warp=on"; then
               echo "WARP proxy is ready"
+              warp_ready=true
               break
             fi
             echo "Waiting for WARP ($attempt/30)"
             sleep 5
           done
+          if [[ "$warp_ready" != true ]]; then
+            echo "::error::Cloudflare WARP proxy did not become ready."
+            exit 1
+          fi
           curl -x socks5h://127.0.0.1:1080 \
             https://cloudflare.com/cdn-cgi/trace --max-time 10 --silent |
-            grep -E "^(ip|warp)=" || true
+            grep -E "^(ip|warp)="
 
       - name: Set up Python
         uses: actions/setup-python@v5

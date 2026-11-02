@@ -168,5 +168,37 @@ class TestTelegramArtwork(unittest.IsolatedAsyncioTestCase):
         self.assertIn("thumbnail", field_names)
         self.assertNotIn("thumb", field_names)
 
+    async def test_upload_audio_attaches_html_caption(self):
+        request = AsyncMock(return_value={"message_id": 1})
+        service = TelegramUploadService(token="token", chat_id="chat")
+        service._request = request
+        caption = TelegramUploadService.build_track_caption({
+            "trackName": "Song <One>",
+            "artistName": "Artist & Co.",
+            "collectionName": "Album",
+            "releaseDate": "2024-01-01",
+            "primaryGenreName": "Rock",
+        }, 185, "320")
+
+        with patch("builtins.open", unittest.mock.mock_open(read_data=b"audio")):
+            await service.upload_audio(
+                "track.mp3", "Song", 185, caption=caption
+            )
+
+        form_fields = {
+            field[0]["name"]: field[2]
+            for field in request.call_args.kwargs["form"]._fields
+            if field[0]["name"] != "audio"
+        }
+        self.assertIn("🎵 <b>Title:</b> Song &lt;One&gt;", form_fields["caption"])
+        self.assertIn("🎤 <b>Artist:</b> Artist &amp; Co.", form_fields["caption"])
+        self.assertIn("⏱️ <b>Duration:</b> 03:05", form_fields["caption"])
+        self.assertIn("📀 <b>Quality:</b> 320 kbps", form_fields["caption"])
+        self.assertTrue(form_fields["caption"].endswith(
+            "@musicman_official\n@musicman_official_bot"
+        ))
+        self.assertEqual(form_fields["parse_mode"], "HTML")
+        self.assertLessEqual(len(form_fields["caption"]), 1024)
+
 if __name__ == '__main__':
     unittest.main()

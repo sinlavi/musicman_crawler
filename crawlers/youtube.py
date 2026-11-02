@@ -311,7 +311,7 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
             return None
     
     # First try YTMusic as it's faster for searches
-    for use_proxy in [True, False]:
+    for use_proxy in [bool(PROXY)]:
         try:
             loop = asyncio.get_event_loop()
             ytmusic_id = await loop.run_in_executor(None, _sync_search_youtube, t_name, a_name, collection_name, ye, target_duration_ms, use_proxy)
@@ -340,7 +340,7 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
         current_order = list(SEARCH_METHOD_ORDER)
 
     for i, method in enumerate(current_order):
-        use_proxy = (i % 2 == 0) if PROXY else False
+        use_proxy = bool(PROXY)
         logger.debug(f"Searching with method {method} (Proxy: {use_proxy})")
         
         try:
@@ -521,7 +521,7 @@ def get_artist_image(artist_name):
     """Get artist image from YTMusic with improved error handling"""
     global _YT_PROXIED, _YT_DIRECT
 
-    for use_proxy in [True, False]:
+    for use_proxy in [bool(PROXY)]:
         try:
             if use_proxy and PROXY:
                 if _YT_PROXIED is None:
@@ -591,7 +591,7 @@ async def download_audio(
 
     for i, method in enumerate(current_order):
         for attempt in range(1, max_retries_per_method + 1):
-            use_proxy = (i % 2 == 0) if PROXY else False
+            use_proxy = bool(PROXY)
             logger.info("▶ Try Method %d (Attempt %d, Proxy: %s)", method, attempt, use_proxy)
             try:
                 opts = _build_opts(method, unique_dir, preferred_quality, use_proxy=use_proxy)

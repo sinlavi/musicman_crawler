@@ -25,6 +25,14 @@ def test_build_opts_includes_socket_timeout():
     assert opts["socket_timeout"] == 20
 
 
+def test_youtube_proxy_options_use_the_configured_warp_proxy():
+    from core.config import PROXY
+    from crawlers.youtube import _build_search_ydl_opts
+
+    assert _build_search_ydl_opts(1, 128, use_proxy=True)["proxy"] == PROXY
+    assert _build_opts(1, "/tmp", 128, use_proxy=True)["proxy"] == PROXY
+
+
 def test_download_progress_percent_uses_estimated_size_and_clamps():
     assert _download_progress_percent({
         "status": "downloading",
