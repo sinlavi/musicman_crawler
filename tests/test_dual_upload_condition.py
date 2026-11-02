@@ -1,5 +1,8 @@
 import sys
+import os
+import tempfile
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 sys.modules['ytmusicapi'] = MagicMock()
 
@@ -199,6 +202,66 @@ class TestTelegramArtwork(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertEqual(form_fields["parse_mode"], "HTML")
         self.assertLessEqual(len(form_fields["caption"]), 1024)
+
+    async def test_download_completes_after_bale_persistence_and_before_callback(self):
+        events = []
+        bot = AsyncMock()
+        api_client = AsyncMock()
+        async def save_messenger_file(*args, **kwargs):
+            events.append("save")
+            return {"success": True}
+
+        api_client.save_messenger_file.side_effect = save_messenger_file
+        service = DownloadService(
+            bot, api_client, AsyncMock(), MagicMock(), AsyncMock()
+        )
+        service.telegram = SimpleNamespace(enabled=False)
+        service._update_status = AsyncMock(return_value=None)
+        service._send_bale_audio = AsyncMock(return_value={
+            "message_id": 42,
+            "audio": {"file_id": "bale-file"},
+        })
+
+        with tempfile.TemporaryDirectory() as root:
+            audio_dir = os.path.join(root, "audio")
+            os.mkdir(audio_dir)
+            audio_path = os.path.join(audio_dir, "track.mp3")
+            with open(audio_path, "wb") as audio:
+                audio.write(b"audio")
+            track = {
+                "trackId": 123,
+                "trackName": "Song",
+                "artistName": "Artist",
+                "trackTimeMillis": 180000,
+            }
+
+            async def save_mirror(*args, **kwargs):
+                events.append("mirror")
+                return {"success": True}
+
+            async def update_status(download_id, status, **kwargs):
+                if status == "completed":
+                    events.append("completed")
+                return {"success": True}
+
+            with patch("services.download_service.get_track", new_callable=AsyncMock) as get_track, \
+                 patch("services.download_service.get_cached_audio", new_callable=AsyncMock, return_value=None), \
+                 patch("services.download_service.search_youtube_track", new_callable=AsyncMock, return_value="video"), \
+                 patch("services.download_service.download_audio", new_callable=AsyncMock, return_value=audio_path), \
+                 patch("services.download_service.lyrics_service.get_lyrics", new_callable=AsyncMock, return_value={"plain": "lyrics"}), \
+                 patch("services.download_service.set_mirror", side_effect=save_mirror), \
+                 patch("services.download_service.update_download_status", side_effect=update_status):
+                get_track.return_value = {"results": [track]}
+                _, success = await service.download_and_send_track(
+                    chat_id=1,
+                    track_id=123,
+                    user_id=1,
+                    download_id=17,
+                    bale_completion_callback=lambda: events.append("callback"),
+                )
+
+        self.assertTrue(success)
+        self.assertEqual(events, ["mirror", "save", "completed", "callback"])
 
 if __name__ == '__main__':
     unittest.main()

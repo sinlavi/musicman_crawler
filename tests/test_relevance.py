@@ -110,11 +110,15 @@ async def test_search_ranks_all_results_and_skips_wrong_artist(monkeypatch):
             "duration": 218,
         },
     ]
-    monkeypatch.setattr(youtube, "SEARCH_METHOD_ORDER", [8])
+    monkeypatch.setattr(youtube, "SEARCH_METHOD_ORDER", [8, 2])
     monkeypatch.setattr(youtube, "_sync_search_youtube", lambda *args: None)
-    monkeypatch.setattr(
-        youtube, "_search_with_ytdlp", lambda *args: results
-    )
+    searched_methods = []
+
+    def search_candidates(query, method, use_proxy):
+        searched_methods.append(method)
+        return results
+
+    monkeypatch.setattr(youtube, "_search_with_ytdlp", search_candidates)
 
     result = await youtube.search_youtube_track(
         "The Less I Know The Better", "Tame Impala", "Currents", "2015",
@@ -122,6 +126,7 @@ async def test_search_ranks_all_results_and_skips_wrong_artist(monkeypatch):
     )
 
     assert result == "right-artist"
+    assert searched_methods == [8]
 
 if __name__ == "__main__":
     test_relevance_scoring()

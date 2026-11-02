@@ -35,6 +35,7 @@ AUDIO_POSTPROCESSOR = {
     "preferredcodec": "mp3",
     "preferredquality": "128",
 }
+CONFIDENT_SEARCH_SCORE = 0.85
 
 # ── Common yt‑dlp flags (shared by all methods) ──────────────────────────
 COMMON_OPTS: dict = {
@@ -153,6 +154,9 @@ def _build_search_ydl_opts(method: int, preferred_quality: int, use_proxy: bool 
     opts["no_warnings"] = True
     opts["extract_flat"] = False  # Get full info
     opts["skip_download"] = True  # Don't download, just extract info
+    opts.pop("sleep_interval", None)
+    opts.pop("max_sleep_interval", None)
+    opts.pop("sleep_interval_requests", None)
     
     cookies_path = _get_cookies_path()
     if cookies_path:
@@ -219,7 +223,7 @@ def _search_with_ytdlp(search_query: str, method: int, use_proxy: bool = True) -
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             # Search query format for yt-dlp
-            search_url = f"ytsearch10:{search_query}"
+            search_url = f"ytsearch5:{search_query}"
             info = ydl.extract_info(search_url, download=False)
             
             if info and 'entries' in info and info['entries']:
@@ -339,7 +343,7 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
     async with SEARCH_METHOD_ORDER_LOCK:
         current_order = list(SEARCH_METHOD_ORDER)
 
-    for i, method in enumerate(current_order):
+    for method in current_order:
         use_proxy = bool(PROXY)
         logger.debug(f"Searching with method {method} (Proxy: {use_proxy})")
         
@@ -383,15 +387,15 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
                             SEARCH_METHOD_ORDER.remove(method)
                             SEARCH_METHOD_ORDER.insert(0, method)
 
-                    if score >= 0.9:
+                    if score >= CONFIDENT_SEARCH_SCORE:
                         logger.info(
-                            "Found excellent match with method %s (score: %.2f)",
+                            "Found confident match with method %s (score: %.2f)",
                             method,
                             score,
                         )
                         break
 
-            if best_score >= 0.9:
+            if best_score >= CONFIDENT_SEARCH_SCORE:
                 break
             
             # Random delay between methods to avoid rate limiting
@@ -589,7 +593,7 @@ async def download_audio(
     async with METHOD_ORDER_LOCK:
         current_order = list(METHOD_ORDER)
 
-    for i, method in enumerate(current_order):
+    for method in current_order:
         for attempt in range(1, max_retries_per_method + 1):
             use_proxy = bool(PROXY)
             logger.info("▶ Try Method %d (Attempt %d, Proxy: %s)", method, attempt, use_proxy)
@@ -705,8 +709,10 @@ def _build_opts(method: int, output_dir: str, preferred_quality: int, use_proxy:
     else:
         logger.debug("No cookies.txt found, proceeding without cookies")
 
-    AUDIO_POSTPROCESSOR['preferredquality'] = str(preferred_quality)
-    opts["postprocessors"] = [AUDIO_POSTPROCESSOR]
+    opts["postprocessors"] = [{
+        **AUDIO_POSTPROCESSOR,
+        "preferredquality": str(preferred_quality),
+    }]
 
     has_deno = _check_deno()
     opts["proxy"] = PROXY if use_proxy else None

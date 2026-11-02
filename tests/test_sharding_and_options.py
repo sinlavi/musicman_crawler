@@ -33,6 +33,15 @@ def test_youtube_proxy_options_use_the_configured_warp_proxy():
     assert _build_opts(1, "/tmp", 128, use_proxy=True)["proxy"] == PROXY
 
 
+def test_download_postprocessor_options_are_isolated_per_download():
+    first = _build_opts(1, "/tmp/first", 320, use_proxy=False)
+    second = _build_opts(1, "/tmp/second", 192, use_proxy=False)
+
+    assert first["postprocessors"][0]["preferredquality"] == "320"
+    assert second["postprocessors"][0]["preferredquality"] == "192"
+    assert first["postprocessors"][0] is not second["postprocessors"][0]
+
+
 def test_download_progress_percent_uses_estimated_size_and_clamps():
     assert _download_progress_percent({
         "status": "downloading",

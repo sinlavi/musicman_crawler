@@ -110,7 +110,8 @@ class DownloadService:
                                       selected_quality=None, track_name_hint=None, track_index=None,
                                       status_prefix="", skip_size_check=True,
                                       silent=False, download_id=None,
-                                      telegram_file_path=None, telegram_file=None):
+                                      telegram_file_path=None, telegram_file=None,
+                                      bale_completion_callback=None):
 
         # If no status_msg provided, use the first update to create it to avoid redundant send/delete
         if status_msg is None:
@@ -386,9 +387,14 @@ class DownloadService:
         status_msg = await self._update_status(chat_id, status_msg, "📤 *در حال ارسال فایل در پیام‌رسان‌ها...*",
                                                status_prefix, is_batch, silent=silent)
         uploaded_192 = False
+        bale_completion_reported = False
         try:
             async def upload_quality(path: str, quality: str) -> None:
+                nonlocal bale_completion_reported
+
                 async def upload_bale() -> None:
+                    nonlocal bale_completion_reported
+
                     cached_bale = await get_cached_audio(
                         track_id, quality=quality, source="bale",
                         api_client=self.api_client)
@@ -402,11 +408,28 @@ class DownloadService:
                     if not bale_file_id or bale_message_id is None:
                         raise RuntimeError("Bale upload returned no file or message id")
                     bale_mirror = f"bale://{bale_message_id}"
-                    await set_mirror("track", str(track_id), "audioUrl", bale_mirror,
-                                     quality=quality, source="bale")
-                    await self.api_client.save_messenger_file(
+                    mirror_result = await set_mirror(
+                        "track", str(track_id), "audioUrl", bale_mirror,
+                        quality=quality, source="bale")
+                    if not mirror_result or not mirror_result.get("success"):
+                        raise RuntimeError(
+                            f"Unable to save Bale mirror for track {track_id}")
+                    save_result = await self.api_client.save_messenger_file(
                         "bale", str(track_id), bale_file_id, str(bale_message_id),
                         quality, os.path.basename(path), bale_mirror)
+                    if not save_result or not save_result.get("success"):
+                        raise RuntimeError(
+                            f"Unable to save Bale file metadata for track {track_id}")
+                    if download_id and not bale_completion_reported:
+                        status_result = await update_download_status(
+                            download_id, "completed", percent=100)
+                        if not status_result or not status_result.get("success"):
+                            raise RuntimeError(
+                                f"Unable to mark download {download_id} complete "
+                                "after Bale upload")
+                        bale_completion_reported = True
+                        if bale_completion_callback:
+                            bale_completion_callback()
 
                 async def upload_telegram() -> None:
                     if not self.telegram.enabled:
@@ -444,7 +467,12 @@ class DownloadService:
                         str(telegram_message_id), quality,
                         os.path.basename(path), telegram_file_path)
 
-                await asyncio.gather(upload_bale(), upload_telegram())
+                results = await asyncio.gather(
+                    upload_bale(), upload_telegram(), return_exceptions=True
+                )
+                errors = [result for result in results if isinstance(result, BaseException)]
+                if errors:
+                    raise errors[0]
 
             try:
                 await upload_quality(mp3_path, "320")

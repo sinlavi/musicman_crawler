@@ -154,6 +154,11 @@ async def process_queue_item(
     telegram_file = _queue_telegram_file(item)
 
     logger.info(f"Processing download {download_id} for track {track_id} (quality: {quality})")
+    bale_completed = False
+
+    def mark_bale_completed():
+        nonlocal bale_completed
+        bale_completed = True
 
     try:
         max_attempts = 3
@@ -176,11 +181,13 @@ async def process_queue_item(
                     silent=True,
                     download_id=download_id,
                     telegram_file=telegram_file,
+                    bale_completion_callback=mark_bale_completed,
                 )
 
                 if success:
                     logger.info(f"Successfully processed download {download_id} on attempt {attempt}")
-                    await update_download_status(download_id, "completed", percent=100)
+                    if not bale_completed:
+                        await update_download_status(download_id, "completed", percent=100)
                     return True
                 else:
                     raise Exception("Download or upload failed")
@@ -190,6 +197,13 @@ async def process_queue_item(
                 if success:
                     return
             except Exception as e:
+                if bale_completed:
+                    logger.error(
+                        "Download %s was completed on Bale; Telegram follow-up failed: %s",
+                        download_id,
+                        e,
+                    )
+                    return
                 logger.warning(f"Error processing download {download_id} (Attempt {attempt}/{max_attempts}): {e}")
                 if attempt < max_attempts:
                     # Wait before retrying (exponential backoff or fixed delay)
