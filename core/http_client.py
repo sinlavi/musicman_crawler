@@ -2,11 +2,59 @@ import aiohttp
 import asyncio
 import random
 import logging
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Optional, Tuple, Any, List
 from aiohttp_socks import ProxyConnector
 from core.config import USER_AGENTS
 
 logger = logging.getLogger("HttpClient")
+
+
+def _retry_delay(
+        attempt: int,
+        retry_delay_seconds: Optional[float],
+        *,
+        status: Optional[int] = None,
+        headers=None,
+        body: str = "",
+) -> float:
+    retry_after = (headers or {}).get("Retry-After")
+    retry_after_delay = None
+    if retry_after:
+        try:
+            retry_after_delay = min(300.0, max(0.0, float(retry_after)))
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                retry_after_delay = min(
+                    300.0,
+                    max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds()),
+                )
+            except (TypeError, ValueError, OverflowError):
+                logger.warning("Ignoring invalid Retry-After header: %r", retry_after)
+
+    if "max_user_connections" in body.lower():
+        return max(
+            30.0,
+            retry_after_delay or 0.0,
+            retry_delay_seconds or 0.0,
+        )
+    if retry_after_delay is not None:
+        return retry_after_delay
+
+    base_delay = (
+        max(0.0, retry_delay_seconds)
+        if retry_delay_seconds is not None
+        else 1.0
+    )
+    if status == 429:
+        base_delay = max(base_delay, 5.0)
+    jitter = random.uniform(0, 0.5) if base_delay else 0.0
+    return min(base_delay * (2 ** min(attempt, 4)), 60.0) + jitter
+
 
 class HttpClient:
     _proxy_session: Optional[aiohttp.ClientSession] = None
@@ -73,6 +121,7 @@ class HttpClient:
             # No, if use_proxy is False we want direct.
             current_proxy = PROXY if (attempt_proxy and not PROXY.startswith("socks")) else None
 
+            retry_delay = None
             try:
                 async with cls._request_semaphore:
                     response_context = session.request(
@@ -91,8 +140,8 @@ class HttpClient:
                             return None, 404, False
 
                         if resp.status in (408, 425, 429) or resp.status >= 500:
+                            body = await resp.text()
                             if i + 1 >= attempts:
-                                body = await resp.text()
                                 logger.error(
                                     "Final HTTP failure for %s: status=%s body=%s",
                                     url,
@@ -100,16 +149,16 @@ class HttpClient:
                                     body[:1000].replace("\n", " "),
                                 )
                                 break
-                            delay = (
-                                max(0.0, retry_delay_seconds)
-                                if retry_delay_seconds is not None
-                                else min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
+                            retry_delay = _retry_delay(
+                                i,
+                                retry_delay_seconds,
+                                status=resp.status,
+                                headers=resp.headers,
+                                body=body,
                             )
                             logger.warning(
-                                f"Request to {url} failed with status {resp.status}; "
-                                f"retrying in {delay}s")
-                            await asyncio.sleep(delay)
-                            continue
+                                "Request to %s failed with status %s; retrying in %.1fs",
+                                url, resp.status, retry_delay)
 
                         if resp.status == 403:
                             logger.warning(
@@ -121,16 +170,14 @@ class HttpClient:
                 if i + 1 >= attempts:
                     logger.error("Final HTTP failure for %s: %s", url, e)
                     break
-                delay = (
-                    max(0.0, retry_delay_seconds)
-                    if retry_delay_seconds is not None
-                    else min(2 ** min(i, 4), 16) + random.uniform(0, 0.5)
-                )
+                retry_delay = _retry_delay(i, retry_delay_seconds)
                 logger.warning(
-                    f"Request to {url} failed ({type(e).__name__}: {e}); "
-                    f"retrying in {delay}s")
-                await asyncio.sleep(delay)
+                    "Request to %s failed (%s: %s); retrying in %.1fs",
+                    url, type(e).__name__, e, retry_delay)
 
-            await asyncio.sleep(0.1)
+            if retry_delay is not None:
+                await asyncio.sleep(retry_delay)
+            else:
+                await asyncio.sleep(0.1)
 
         return None, last_status, True

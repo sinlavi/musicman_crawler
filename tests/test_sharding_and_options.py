@@ -11,6 +11,12 @@ from main import (
 def test_common_opts_socket_timeout():
     assert "socket_timeout" in COMMON_OPTS
     assert COMMON_OPTS["socket_timeout"] == 20
+    assert COMMON_OPTS["retries"] == 10
+    assert COMMON_OPTS["fragment_retries"] == 10
+    assert COMMON_OPTS["concurrent_fragments"] == 8
+    assert COMMON_OPTS["sleep_interval"] == 2
+    assert COMMON_OPTS["max_sleep_interval"] == 6
+    assert COMMON_OPTS["sleep_interval_requests"] == 1
 
 def test_build_opts_includes_socket_timeout():
     opts = _build_opts(1, "/tmp", 128, use_proxy=False)

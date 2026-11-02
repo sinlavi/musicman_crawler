@@ -129,6 +129,13 @@ While a batch is running, workers recheck the pending queue every
 zero ahead of unstarted tracks. This setting defaults to 3 seconds and cannot be
 lowered below 1 second.
 
+YouTube downloads use up to 8 parallel fragments per download, while
+`YOUTUBE_CONCURRENCY` still limits the number of simultaneous downloads. yt-dlp
+retries transient failures and spaces requests by 1–6 seconds. API retries use
+exponential backoff, honor `Retry-After`, and wait at least 30 seconds if the API
+reports `max_user_connections`; repeated queue API failures are spaced by at
+least 10 seconds.
+
 ### GitHub Actions secrets
 
 Required for every worker:

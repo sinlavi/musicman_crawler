@@ -40,15 +40,15 @@ AUDIO_POSTPROCESSOR = {
 COMMON_OPTS: dict = {
     "outtmpl": "%(title)s.%(ext)s",
     "noplaylist": True,
-    "retries": 3,
-    "fragment_retries": 3,
+    "retries": 10,
+    "fragment_retries": 10,
     "no_check_certificate": True,
-    "concurrent_fragments": 2,
+    "concurrent_fragments": 8,
     "quiet": True,
     "no_warnings": True,
-    "sleep_interval": 4,
-    "max_sleep_interval": 10,
-    "sleep_interval_requests": 2,
+    "sleep_interval": 2,
+    "max_sleep_interval": 6,
+    "sleep_interval_requests": 1,
     "socket_timeout": 20,
 }
 

@@ -5,7 +5,12 @@ import pytest
 
 import crawlers.itunes as itunes
 from core.config import API_RETRY_DELAY_SECONDS
+from main import QUEUE_ERROR_RETRY_DELAY_SECONDS
 from services.worker_restart import restart_worker
+
+
+def test_queue_api_error_retry_is_at_least_ten_seconds():
+    assert QUEUE_ERROR_RETRY_DELAY_SECONDS >= 10
 
 
 @pytest.mark.asyncio
