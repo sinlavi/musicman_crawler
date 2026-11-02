@@ -161,6 +161,9 @@ variables → Actions**.
 
 The workflow maps these GitHub Secrets into environment variables before starting
 Python. The application cannot read GitHub Secrets directly.
+When a worker run finishes on `main`, the continuation workflow dispatches the next
+worker run automatically. Cancelled runs are not restarted; scheduled runs remain
+enabled as a fallback.
 
 ### 4. Running the Crawler
 

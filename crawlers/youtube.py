@@ -209,10 +209,10 @@ def _build_search_ydl_opts(method: int, preferred_quality: int, use_proxy: bool 
     return opts
 
 
-def _search_with_ytdlp(search_query: str, method: int, use_proxy: bool = True) -> Optional[dict]:
+def _search_with_ytdlp(search_query: str, method: int, use_proxy: bool = True) -> list[dict]:
     """
     Search YouTube using yt-dlp with specific method.
-    Returns the best matching video info or None.
+    Returns the available video candidates for relevance ranking.
     """
     try:
         opts = _build_search_ydl_opts(method, 128, use_proxy=use_proxy)
@@ -223,13 +223,12 @@ def _search_with_ytdlp(search_query: str, method: int, use_proxy: bool = True) -
             info = ydl.extract_info(search_url, download=False)
             
             if info and 'entries' in info and info['entries']:
-                # Return the first result
-                return info['entries'][0]
+                return [entry for entry in info['entries'] if isinstance(entry, dict)]
             
     except Exception as e:
         logger.debug(f"Search method {method} failed: {e}")
     
-    return None
+    return []
 
 
 def _calculate_relevance_score(video_info: dict, t_name: str, a_name: str, collection_name: str, ye: str, target_duration_ms: int = 0) -> float:
@@ -261,10 +260,16 @@ def _calculate_relevance_score(video_info: dict, t_name: str, a_name: str, colle
         elif diff > 20: score -= 1.0 # Ultimate penalty
         elif diff > 10: score -= 0.50 # Heavy penalty for large duration mismatch
 
-    # Album/collection matching (5% weight)
+    # Prefer the requested album when the source exposes album metadata.
     if collection_name:
+        album = video_info.get('album')
         description = video_info.get('description', '')
-        if collection_name.lower() in title.lower() or collection_name.lower() in description.lower():
+        if album:
+            album_sim = _get_similarity(collection_name, album)
+            score += album_sim * 0.10
+            if album_sim < 0.35:
+                score -= 0.05
+        elif collection_name.lower() in title.lower() or collection_name.lower() in description.lower():
             score += 0.05
     
     # Year matching (5% weight)
@@ -274,6 +279,21 @@ def _calculate_relevance_score(video_info: dict, t_name: str, a_name: str, colle
             score += 0.05
     
     return score
+
+
+def _has_strong_title_artist_match(
+    title: str,
+    artist_text: str,
+    target_title: str,
+    target_artist: str,
+) -> bool:
+    return (
+        _get_similarity(target_title, title) >= 0.55
+        and (
+            not target_artist
+            or _get_similarity(target_artist, artist_text) >= 0.5
+        )
+    )
 
 
 async def search_youtube_track(t_name: str, a_name: str, collection_name: str, ye: str, target_duration_ms: int = 0) -> Optional[str]:
@@ -312,6 +332,7 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
     best_result = None
     best_score = -1.0
     best_title_sim = 0.0
+    best_artist_sim = 0.0
     successful_methods = []
     
     # Try each method in order
@@ -324,31 +345,54 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
         
         try:
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, _search_with_ytdlp, search_query, method, use_proxy)
-            
-            if result and result.get('id'):
-                # Calculate relevance score
-                score = _calculate_relevance_score(result, t_name, a_name, collection_name, ye, target_duration_ms)
-                
-                logger.debug(f"Method {method} found: {result.get('title', 'N/A')} (score: {score:.2f})")
-                
+            results = await loop.run_in_executor(
+                None, _search_with_ytdlp, search_query, method, use_proxy
+            )
+
+            for result in results:
+                if not result.get('id'):
+                    continue
+                artist_text = f"{result.get('channel', '')} {result.get('uploader', '')}"
+                if not _has_strong_title_artist_match(
+                    result.get('title', ''), artist_text, t_name, a_name
+                ):
+                    continue
+
+                score = _calculate_relevance_score(
+                    result, t_name, a_name, collection_name, ye, target_duration_ms
+                )
                 title_sim = _get_similarity(t_name, result.get('title', ''))
+                artist_sim = _get_similarity(a_name, artist_text)
+
+                logger.debug(
+                    "Method %s found %s (score: %.2f)",
+                    method,
+                    result.get('title', 'N/A'),
+                    score,
+                )
+
                 if score > best_score:
                     best_score = score
                     best_result = result.get('id')
                     best_title_sim = title_sim
+                    best_artist_sim = artist_sim
                     successful_methods.append(method)
-                    
-                    # Update method order (bring successful method to front)
+
                     async with SEARCH_METHOD_ORDER_LOCK:
                         if method in SEARCH_METHOD_ORDER:
                             SEARCH_METHOD_ORDER.remove(method)
                             SEARCH_METHOD_ORDER.insert(0, method)
-                    
-                    # If score is very high (90%+), stop searching
+
                     if score >= 0.9:
-                        logger.info(f"Found excellent match with method {method} (score: {score:.2f})")
+                        logger.info(
+                            "Found excellent match with method %s (score: %.2f)",
+                            method,
+                            score,
+                        )
                         break
+
+            if best_score >= 0.9:
+                break
             
             # Random delay between methods to avoid rate limiting
             await asyncio.sleep(random.uniform(0.1, 0.3))
@@ -366,8 +410,10 @@ async def search_youtube_track(t_name: str, a_name: str, collection_name: str, y
     
     if best_result:
         # Title similarity check for the best result
-        if best_score < 0.45 or best_title_sim < 0.4:
-            logger.warning(f"Best match found but score too low (score: {best_score:.2f}, title_sim: {best_title_sim:.2f}): {t_name} - {a_name}")
+        if best_score < 0.45 or best_title_sim < 0.55 or (
+            a_name and best_artist_sim < 0.5
+        ):
+            logger.warning(f"Best match found but score too low (score: {best_score:.2f}, title_sim: {best_title_sim:.2f}, artist_sim: {best_artist_sim:.2f}): {t_name} - {a_name}")
             return None
 
         logger.info(f"Search successful with methods: {successful_methods}, best score: {best_score:.2f}, title_sim: {best_title_sim:.2f}")
@@ -426,8 +472,13 @@ def _sync_search_youtube(t_name: str, a_name: str, collection_name: str, ye: str
 
             score = 0.0
             title_sim = _get_similarity(t_name, res_title)
+            artist_sim = _get_similarity(a_name, res_artist)
+            if not _has_strong_title_artist_match(
+                res_title, res_artist, t_name, a_name
+            ):
+                continue
             score += title_sim * 0.40
-            score += _get_similarity(a_name, res_artist) * 0.30
+            score += artist_sim * 0.30
 
             # Duration matching (20% weight)
             if target_duration_ms > 0 and duration_sec > 0:
@@ -437,7 +488,11 @@ def _sync_search_youtube(t_name: str, a_name: str, collection_name: str, ye: str
                 elif diff < 15: score += 0.10
                 elif diff > 30: score -= 0.50
 
-            score += _get_similarity(collection_name, res_album) * 0.05
+            if collection_name and res_album:
+                album_sim = _get_similarity(collection_name, res_album)
+                score += album_sim * 0.10
+                if album_sim < 0.35:
+                    score -= 0.05
 
             if ye and res_year:
                 if str(ye) == str(res_year):
@@ -450,7 +505,7 @@ def _sync_search_youtube(t_name: str, a_name: str, collection_name: str, ye: str
                 best_title_sim = title_sim
 
         if best_match_id:
-            if highest_score < 0.45 or best_title_sim < 0.4:
+            if highest_score < 0.45 or best_title_sim < 0.55:
                 logger.warning(f"YTMusic best match score too low (score: {highest_score:.2f}, title_sim: {best_title_sim:.2f})")
                 return None
 

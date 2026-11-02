@@ -62,8 +62,12 @@ def _queue_download_id(item):
     return item.get("download_id") or item.get("downloadId") or item.get("id")
 
 
+def _queue_track_id(item):
+    return item.get("trackId") or item.get("track_id") or item.get("id")
+
+
 def _queue_shard_id(item):
-    return item.get("trackId") or item.get("track_id") or _queue_download_id(item)
+    return _queue_track_id(item) or _queue_download_id(item)
 
 
 def _queue_items_for_instance(items, instance_id=INSTANCE_ID, total_instances=TOTAL_INSTANCES):
@@ -140,9 +144,12 @@ def _normalize_queue_items(items):
     return []
 
 
-async def process_queue_item(bot, item, download_service, user_id, active_tasks, task_done_event=None):
+async def process_queue_item(
+    bot, item, download_service, user_id, active_tasks, task_done_event=None,
+    active_track_ids=None,
+):
     download_id = item.get("download_id") or item.get("downloadId") or item.get("id")
-    track_id = item.get("trackId") or item.get("track_id") or item.get("id")
+    track_id = _queue_track_id(item)
     quality = str(item.get("quality") or DEFAULT_QUALITY)
     telegram_file = _queue_telegram_file(item)
 
@@ -192,6 +199,8 @@ async def process_queue_item(bot, item, download_service, user_id, active_tasks,
                     await update_download_status(download_id, "failed", error_message=str(e))
     finally:
         active_tasks.discard(download_id)
+        if active_track_ids is not None:
+            active_track_ids.discard(str(track_id))
         if task_done_event:
             task_done_event.set()
 
@@ -232,6 +241,7 @@ async def run_crawler():
             await reset_stuck_downloads()
 
         active_tasks = set()
+        active_track_ids = set()
         processing_tasks = {}
         pending_batch = deque()
         consecutive_tech_errors = 0
@@ -352,10 +362,13 @@ async def run_crawler():
 
                     if not _belongs_to_instance(_queue_shard_id(item)):
                         continue
-                    if download_id in active_tasks:
+                    track_id = _queue_track_id(item)
+                    track_key = str(track_id)
+                    if download_id in active_tasks or track_key in active_track_ids:
                         continue
 
                     active_tasks.add(download_id)
+                    active_track_ids.add(track_key)
                     tasks_started += 1
                     task = asyncio.create_task(
                         process_queue_item(
@@ -365,6 +378,7 @@ async def run_crawler():
                             user_id,
                             active_tasks,
                             task_done_event,
+                            active_track_ids,
                         )
                     )
                     processing_tasks[task] = download_id
