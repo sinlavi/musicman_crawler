@@ -1,3 +1,5 @@
+import asyncio
+
 import aiohttp
 from unittest.mock import AsyncMock
 
@@ -138,3 +140,61 @@ async def test_3rah_prefers_warp_after_direct_connection_failure(monkeypatch):
     assert [
         call.kwargs["use_proxy"] for call in get_session.await_args_list
     ] == [False, True, True]
+
+
+@pytest.mark.asyncio
+async def test_3rah_bypasses_failing_warp_during_cooldown_and_recovers(monkeypatch):
+    transport_attempts = []
+
+    def get_session(use_proxy):
+        transport_attempts.append(use_proxy)
+        attempt = len(transport_attempts)
+        if attempt == 5:
+            return FakeSession([FakeResponse(200, data={"direct": True})])
+        if attempt == 7:
+            return FakeSession([FakeResponse(200, data={"warp": True})])
+        return FailingSession()
+
+    monkeypatch.setattr(HttpClient, "get_session", AsyncMock(side_effect=get_session))
+    monkeypatch.setattr("core.config.PROXY", "socks5h://127.0.0.1:1080")
+    monkeypatch.setattr(http_client, "_API_PROXY_PREFERRED_UNTIL", 0.0)
+    monkeypatch.setattr(http_client, "_API_PROXY_CONSECUTIVE_FAILURES", 0)
+    monkeypatch.setattr(http_client, "_API_PROXY_DISABLED_UNTIL", 0.0)
+    monkeypatch.setattr("core.http_client.asyncio.sleep", AsyncMock())
+
+    request = {
+        "method": "GET",
+        "url": "https://mm.3rah.ir/api/download/queue",
+        "use_proxy": False,
+        "retry_delay_seconds": 0,
+    }
+    failed_once = await HttpClient.request_with_methods(
+        **request, max_attempts=2
+    )
+    failed_twice = await HttpClient.request_with_methods(
+        **request, max_attempts=2
+    )
+    direct_during_cooldown = await HttpClient.request_with_methods(
+        **request, max_attempts=1
+    )
+
+    assert failed_once[2] is True
+    assert failed_twice[2] is True
+    assert direct_during_cooldown == ({"direct": True}, 200, False)
+    assert http_client._API_PROXY_DISABLED_UNTIL > (
+        asyncio.get_running_loop().time()
+    )
+    assert transport_attempts == [False, True, True, False, False]
+
+    monkeypatch.setattr(
+        http_client,
+        "_API_PROXY_DISABLED_UNTIL",
+        asyncio.get_running_loop().time() - 1,
+    )
+    recovered = await HttpClient.request_with_methods(
+        **request, max_attempts=2
+    )
+
+    assert recovered == ({"warp": True}, 200, False)
+    assert transport_attempts[-2:] == [False, True]
+    assert http_client._API_PROXY_CONSECUTIVE_FAILURES == 0
