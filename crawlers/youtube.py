@@ -394,7 +394,164 @@ def _calculate_relevance_score(
         is_official_channel=_is_official_channel(channel, uploader, a_name),
     )
 
+# ============================================================================
+# High-level search  ← این بخش را دوباره اضافه کنید
+# ============================================================================
 
+async def search_youtube_track(
+    t_name: str,
+    a_name: str,
+    collection_name: str,
+    ye: str,
+    target_duration_ms: int = 0,
+) -> Optional[str]:
+    """
+    Search for a YouTube track using multiple methods (same as download).
+    Returns video ID or None.
+    """
+    if OFFLINE_MODE:
+        logger.info("Offline mode: skipping YouTube search")
+        return None
+
+    async with _YOUTUBE_RATE_LIMIT_LOCK:
+        if time.monotonic() < _YOUTUBE_RATE_LIMIT_UNTIL:
+            logger.warning("YouTube rate-limit cooldown is active; skipping search")
+            return None
+
+    # ── 1) Try YTMusic first (faster) ──────────────────────────────────
+    try:
+        loop = asyncio.get_event_loop()
+        ytmusic_id = await loop.run_in_executor(
+            None,
+            _sync_search_youtube,
+            t_name,
+            a_name,
+            collection_name,
+            ye,
+            target_duration_ms,
+            bool(PROXY),
+        )
+        if ytmusic_id:
+            logger.info("✅ YTMusic search successful: %s", ytmusic_id)
+            return ytmusic_id
+    except Exception as e:
+        if _is_youtube_rate_limit_error(e):
+            await _activate_youtube_cooldown()
+            return None
+        logger.debug("YTMusic search failed: %s", e)
+
+    # ── 2) Fall back to yt-dlp searches ────────────────────────────────
+    search_query = f"{t_name} {a_name}".strip()
+    if collection_name:
+        search_query += f" {collection_name}"
+
+    best_result: Optional[str] = None
+    best_score = -1.0
+    best_title_sim = 0.0
+    best_artist_sim = 0.0
+    successful_methods: list[int] = []
+
+    async with SEARCH_METHOD_ORDER_LOCK:
+        current_order = list(SEARCH_METHOD_ORDER)
+
+    for method in current_order:
+        use_proxy = bool(PROXY)
+        logger.debug("Searching with method %s (Proxy: %s)", method, use_proxy)
+
+        try:
+            loop = asyncio.get_event_loop()
+            results = await loop.run_in_executor(
+                None, _search_with_ytdlp, search_query, method, use_proxy
+            )
+
+            for result in results:
+                if not result.get("id"):
+                    continue
+
+                artist_text = (
+                    f"{result.get('channel', '')} {result.get('uploader', '')}"
+                ).strip()
+
+                if not _has_strong_title_artist_match(
+                    result.get("title", ""), artist_text, t_name, a_name
+                ):
+                    continue
+
+                score, title_sim, artist_sim, duration_score = _calculate_relevance_score(
+                    result, t_name, a_name, collection_name, ye, target_duration_ms
+                )
+
+                logger.debug(
+                    "Method %s found %r (score=%.2f, title=%.2f, artist=%.2f, dur=%.2f)",
+                    method,
+                    result.get("title", "N/A"),
+                    score,
+                    title_sim,
+                    artist_sim,
+                    duration_score,
+                )
+
+                if score > best_score:
+                    best_score = score
+                    best_result = result.get("id")
+                    best_title_sim = title_sim
+                    best_artist_sim = artist_sim
+                    successful_methods.append(method)
+
+                    async with SEARCH_METHOD_ORDER_LOCK:
+                        if method in SEARCH_METHOD_ORDER:
+                            SEARCH_METHOD_ORDER.remove(method)
+                            SEARCH_METHOD_ORDER.insert(0, method)
+
+                    if score >= CONFIDENT_SEARCH_SCORE:
+                        logger.info(
+                            "Found confident match with method %s (score=%.2f)",
+                            method,
+                            score,
+                        )
+                        break
+
+            if best_score >= CONFIDENT_SEARCH_SCORE:
+                break
+
+            # Random delay between methods to avoid rate limiting
+            await asyncio.sleep(random.uniform(0.1, 0.3))
+
+        except Exception as e:
+            if _is_youtube_rate_limit_error(e):
+                await _activate_youtube_cooldown()
+                return None
+            logger.debug("Search method %s error: %s", method, e)
+            async with SEARCH_METHOD_ORDER_LOCK:
+                if method in SEARCH_METHOD_ORDER:
+                    SEARCH_METHOD_ORDER.remove(method)
+                    SEARCH_METHOD_ORDER.append(method)
+
+    # ── 3) Validate & return best match ────────────────────────────────
+    if best_result:
+        if best_score < 0.45 or best_title_sim < 0.55 or (
+            a_name and best_artist_sim < 0.5
+        ):
+            logger.warning(
+                "Best match found but score too low "
+                "(score=%.2f, title=%.2f, artist=%.2f): %s - %s",
+                best_score,
+                best_title_sim,
+                best_artist_sim,
+                t_name,
+                a_name,
+            )
+            return None
+
+        logger.info(
+            "Search successful with methods: %s, best score: %.2f",
+            successful_methods,
+            best_score,
+        )
+        return best_result
+
+    logger.warning("No search results found for: %s - %s", t_name, a_name)
+    return None
 # ============================================================================
 # yt-dlp search
 # ============================================================================
