@@ -35,7 +35,7 @@ AUDIO_POSTPROCESSOR = {
 }
 CONFIDENT_SEARCH_SCORE = 0.88
 
-# ── Common yt‑dlp flags (shared by all methods) ──────────────────────────
+# ── Common yt‑dlp flags ────────────────────────────────────────────
 COMMON_OPTS: dict = {
     "outtmpl": "%(title)s.%(ext)s",
     "noplaylist": True,
@@ -51,14 +51,17 @@ COMMON_OPTS: dict = {
     "socket_timeout": 20,
 }
 
-# ── Smart Method Sorting ────────────────────────────────────────────────
-METHOD_ORDER = [8, 2, 3, 4, 5, 6, 7, 1]
+# ── Client order: SABR-resistant clients first ────────────────────
+# web_embedded: no GVS PO token required, works for embeddable videos.
+# tv:           no PO token required, but needs cookies for non-DRM streams.
+# android_vr:   yt-dlp default when no JS runtime is available.
+METHOD_ORDER = ["web_embedded", "tv", "android_vr", "web_safari", "mweb", "web", "android", "tv_simply"]
 METHOD_ORDER_LOCK = asyncio.Lock()
 
-# ── Search Method Order (same as download methods) ───────────────────────
-SEARCH_METHOD_ORDER = [8, 2, 3, 4, 5, 6, 7, 1]
+SEARCH_METHOD_ORDER = list(METHOD_ORDER)
 SEARCH_METHOD_ORDER_LOCK = asyncio.Lock()
 YOUTUBE_REQUEST_SEMAPHORE = asyncio.Semaphore(YOUTUBE_CONCURRENCY)
+
 _YOUTUBE_RATE_LIMIT_UNTIL = 0.0
 _YOUTUBE_RATE_LIMIT_TRIGGERED = False
 _YOUTUBE_RATE_LIMIT_LOCK = asyncio.Lock()
@@ -66,7 +69,6 @@ YOUTUBE_RATE_LIMIT_COOLDOWN = max(
     15 * 60, int(os.getenv("YOUTUBE_RATE_LIMIT_COOLDOWN", str(60 * 60)))
 )
 
-# ── Debug: whenever YT_DEBUG_FORMATS=1, log available formats on failure ──
 DEBUG_FORMATS = os.getenv("YT_DEBUG_FORMATS", "0") == "1"
 
 
@@ -120,16 +122,15 @@ def _check_proxy() -> Optional[str]:
     return _CACHED_LOCAL_PROXY if _CACHED_LOCAL_PROXY else None
 
 
+def _client_for(method: str) -> str:
+    return str(method)
+
+
 # ============================================================================
 # Debug helper
 # ============================================================================
 
-def _debug_dump_formats(url: str, method: int) -> None:
-    """
-    When a download fails with 'Requested format is not available', log what
-    formats the current player_client actually returned. This tells you
-    immediately whether the client got *zero* formats, or just no audio-only.
-    """
+def _debug_dump_formats(url: str, method: str) -> None:
     if not DEBUG_FORMATS:
         return
     try:
@@ -139,24 +140,18 @@ def _debug_dump_formats(url: str, method: int) -> None:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
         if not info:
-            logger.debug("[DEBUG] Method %d: extract_info returned None", method)
+            logger.debug("[DEBUG] Method %s: extract_info returned None", method)
             return
         formats = info.get("formats", [])
         logger.debug(
-            "[DEBUG] Method %d (%s) → %d format(s) for %s",
-            method,
-            info.get("extractor", "?"),
-            len(formats),
-            url,
+            "[DEBUG] Method %s → %d format(s) for %s",
+            method, len(formats), url,
         )
         for fmt in formats:
             logger.debug(
                 "  id=%s ext=%s acodec=%s vcodec=%s abr=%s",
-                fmt.get("format_id"),
-                fmt.get("ext"),
-                fmt.get("acodec"),
-                fmt.get("vcodec"),
-                fmt.get("abr"),
+                fmt.get("format_id"), fmt.get("ext"), fmt.get("acodec"),
+                fmt.get("vcodec"), fmt.get("abr"),
             )
     except Exception as e:
         logger.debug("[DEBUG] _debug_dump_formats failed: %s", e)
@@ -173,36 +168,18 @@ def _get_similarity(a: str, b: str) -> float:
 
 
 _NOISE_PATTERNS = [
-    r"\(official\s*(music\s*)?video\)",
-    r"\[official\s*(music\s*)?video\]",
-    r"\(official\s*audio\)",
-    r"\[official\s*audio\]",
-    r"\(lyric[s]?\s*video\)",
-    r"\[lyric[s]?\s*video\]",
-    r"\(audio\)",
-    r"\[audio\]",
-    r"\(hd\)",
-    r"\[hd\]",
-    r"\(hq\)",
-    r"\[hq\]",
-    r"\((?:re)?master(?:ed)?\)",
-    r"\[(?:re)?master(?:ed)?\]",
-    r"\(explicit\)",
-    r"\[explicit\]",
-    r"\(clean\)",
-    r"\[clean\]",
-    r"\(feat\.?[^)]*\)",
-    r"\[feat\.?[^\]]*\]",
-    r"\(ft\.?[^)]*\)",
-    r"\[ft\.?[^\]]*\]",
-    r"\(with\s+[^)]*\)",
-    r"\b(?:ft|feat)\.?\s+\S+",
-    r"\bofficial\s+(?:music\s+)?video\b",
-    r"\blyric[s]?\s+video\b",
-    r"\bofficial\s+audio\b",
-    r"\b(?:re)?master(?:ed)?\b",
-    r"\bexplicit\b",
-    r"\bclean\b",
+    r"\(official\s*(music\s*)?video\)", r"\[official\s*(music\s*)?video\]",
+    r"\(official\s*audio\)", r"\[official\s*audio\]",
+    r"\(lyric[s]?\s*video\)", r"\[lyric[s]?\s*video\]",
+    r"\(audio\)", r"\[audio\]", r"\(hd\)", r"\[hd\]", r"\(hq\)", r"\[hq\]",
+    r"\((?:re)?master(?:ed)?\)", r"\[(?:re)?master(?:ed)?\]",
+    r"\(explicit\)", r"\[explicit\]", r"\(clean\)", r"\[clean\]",
+    r"\(feat\.?[^)]*\)", r"\[feat\.?[^\]]*\]",
+    r"\(ft\.?[^)]*\)", r"\[ft\.?[^\]]*\]",
+    r"\(with\s+[^)]*\)", r"\b(?:ft|feat)\.?\s+\S+",
+    r"\bofficial\s+(?:music\s+)?video\b", r"\blyric[s]?\s+video\b",
+    r"\bofficial\s+audio\b", r"\b(?:re)?master(?:ed)?\b",
+    r"\bexplicit\b", r"\bclean\b",
 ]
 _NOISE_REGEX = [re.compile(p, re.IGNORECASE) for p in _NOISE_PATTERNS]
 
@@ -226,26 +203,18 @@ def _score_duration(target_duration_ms: int, video_duration_sec) -> float:
     if not target_duration_ms or dur <= 0:
         return 0.5
     diff = abs(target_duration_ms / 1000.0 - dur)
-    if diff <= 2:
-        return 1.0
-    if diff <= 5:
-        return 0.9
-    if diff <= 10:
-        return 0.7
-    if diff <= 15:
-        return 0.5
-    if diff <= 25:
-        return 0.25
-    if diff <= 40:
-        return 0.05
+    if diff <= 2:  return 1.0
+    if diff <= 5:  return 0.9
+    if diff <= 10: return 0.7
+    if diff <= 15: return 0.5
+    if diff <= 25: return 0.25
+    if diff <= 40: return 0.05
     return 0.0
 
 
 def _is_official_channel(channel: str, uploader: str, target_artist: str) -> bool:
     text = f"{channel} {uploader}".strip().lower()
-    if "vevo" in text:
-        return True
-    if "- topic" in text:
+    if "vevo" in text or "- topic" in text:
         return True
     if target_artist:
         norm_target = _normalize_text_for_matching(target_artist)
@@ -257,18 +226,10 @@ def _is_official_channel(channel: str, uploader: str, target_artist: str) -> boo
 
 def _score_candidate(
     *,
-    title: str,
-    artist_text: str,
-    album: str,
-    upload_date: str,
-    duration_sec,
-    description: str,
-    t_name: str,
-    a_name: str,
-    collection_name: str,
-    ye: str,
-    target_duration_ms: int = 0,
-    is_official_channel: bool = False,
+    title: str, artist_text: str, album: str, upload_date: str,
+    duration_sec, description: str,
+    t_name: str, a_name: str, collection_name: str, ye: str,
+    target_duration_ms: int = 0, is_official_channel: bool = False,
 ) -> tuple[float, float, float, float]:
     norm_title = _normalize_text_for_matching(title)
     norm_target_title = _normalize_text_for_matching(t_name)
@@ -307,11 +268,9 @@ def _score_candidate(
 
     # Year
     year_score = 0.0
-    if ye and upload_date:
-        if str(ye) == str(upload_date)[:4]:
-            year_score = 1.0
+    if ye and upload_date and str(ye) == str(upload_date)[:4]:
+        year_score = 1.0
 
-    # Weighted total
     score = (
         title_sim * 0.35
         + effective_artist_sim * 0.25
@@ -319,22 +278,16 @@ def _score_candidate(
         + album_sim * 0.10
         + year_score * 0.05
     )
+    if is_official_channel: score += 0.03
+    if artist_in_title:     score += 0.02
 
-    if is_official_channel:
-        score += 0.03
-    if artist_in_title:
-        score += 0.02
-
-    # Hard penalties
     if target_duration_ms and duration_sec:
         try:
             diff = abs(target_duration_ms / 1000.0 - float(duration_sec))
         except (TypeError, ValueError):
             diff = 0
-        if diff > 40:
-            score -= 0.30
-        elif diff > 25:
-            score -= 0.10
+        if diff > 40:   score -= 0.30
+        elif diff > 25: score -= 0.10
     if title_sim < 0.35:
         score -= 0.20
 
@@ -342,43 +295,29 @@ def _score_candidate(
 
 
 def _has_strong_title_artist_match(
-    title: str,
-    artist_text: str,
-    target_title: str,
-    target_artist: str,
+    title: str, artist_text: str, target_title: str, target_artist: str,
 ) -> bool:
     norm_title = _normalize_text_for_matching(title)
     norm_target_title = _normalize_text_for_matching(target_title)
-
     if _get_similarity(norm_target_title, norm_title) < 0.55:
         if not (norm_target_title and norm_target_title in norm_title):
             return False
-
     if not target_artist:
         return True
-
     norm_artist = _normalize_text_for_matching(artist_text)
     norm_target_artist = _normalize_text_for_matching(target_artist)
-
     if _get_similarity(norm_target_artist, norm_artist) >= 0.5:
         return True
-    if norm_target_artist in norm_title:
-        return True
-    return False
+    return norm_target_artist in norm_title
 
 
 def _calculate_relevance_score(
-    video_info: dict,
-    t_name: str,
-    a_name: str,
-    collection_name: str,
-    ye: str,
-    target_duration_ms: int = 0,
+    video_info: dict, t_name: str, a_name: str,
+    collection_name: str, ye: str, target_duration_ms: int = 0,
 ) -> tuple[float, float, float, float]:
     channel = video_info.get("channel", "") or ""
     uploader = video_info.get("uploader", "") or ""
     artist_text = f"{channel} {uploader}".strip()
-
     return _score_candidate(
         title=video_info.get("title", "") or "",
         artist_text=artist_text,
@@ -386,177 +325,17 @@ def _calculate_relevance_score(
         upload_date=video_info.get("upload_date", "") or "",
         duration_sec=video_info.get("duration", 0) or 0,
         description=video_info.get("description", "") or "",
-        t_name=t_name,
-        a_name=a_name,
-        collection_name=collection_name,
-        ye=ye,
+        t_name=t_name, a_name=a_name, collection_name=collection_name, ye=ye,
         target_duration_ms=target_duration_ms,
         is_official_channel=_is_official_channel(channel, uploader, a_name),
     )
 
-# ============================================================================
-# High-level search  ← این بخش را دوباره اضافه کنید
-# ============================================================================
 
-async def search_youtube_track(
-    t_name: str,
-    a_name: str,
-    collection_name: str,
-    ye: str,
-    target_duration_ms: int = 0,
-) -> Optional[str]:
-    """
-    Search for a YouTube track using multiple methods (same as download).
-    Returns video ID or None.
-    """
-    if OFFLINE_MODE:
-        logger.info("Offline mode: skipping YouTube search")
-        return None
-
-    async with _YOUTUBE_RATE_LIMIT_LOCK:
-        if time.monotonic() < _YOUTUBE_RATE_LIMIT_UNTIL:
-            logger.warning("YouTube rate-limit cooldown is active; skipping search")
-            return None
-
-    # ── 1) Try YTMusic first (faster) ──────────────────────────────────
-    try:
-        loop = asyncio.get_event_loop()
-        ytmusic_id = await loop.run_in_executor(
-            None,
-            _sync_search_youtube,
-            t_name,
-            a_name,
-            collection_name,
-            ye,
-            target_duration_ms,
-            bool(PROXY),
-        )
-        if ytmusic_id:
-            logger.info("✅ YTMusic search successful: %s", ytmusic_id)
-            return ytmusic_id
-    except Exception as e:
-        if _is_youtube_rate_limit_error(e):
-            await _activate_youtube_cooldown()
-            return None
-        logger.debug("YTMusic search failed: %s", e)
-
-    # ── 2) Fall back to yt-dlp searches ────────────────────────────────
-    search_query = f"{t_name} {a_name}".strip()
-    if collection_name:
-        search_query += f" {collection_name}"
-
-    best_result: Optional[str] = None
-    best_score = -1.0
-    best_title_sim = 0.0
-    best_artist_sim = 0.0
-    successful_methods: list[int] = []
-
-    async with SEARCH_METHOD_ORDER_LOCK:
-        current_order = list(SEARCH_METHOD_ORDER)
-
-    for method in current_order:
-        use_proxy = bool(PROXY)
-        logger.debug("Searching with method %s (Proxy: %s)", method, use_proxy)
-
-        try:
-            loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(
-                None, _search_with_ytdlp, search_query, method, use_proxy
-            )
-
-            for result in results:
-                if not result.get("id"):
-                    continue
-
-                artist_text = (
-                    f"{result.get('channel', '')} {result.get('uploader', '')}"
-                ).strip()
-
-                if not _has_strong_title_artist_match(
-                    result.get("title", ""), artist_text, t_name, a_name
-                ):
-                    continue
-
-                score, title_sim, artist_sim, duration_score = _calculate_relevance_score(
-                    result, t_name, a_name, collection_name, ye, target_duration_ms
-                )
-
-                logger.debug(
-                    "Method %s found %r (score=%.2f, title=%.2f, artist=%.2f, dur=%.2f)",
-                    method,
-                    result.get("title", "N/A"),
-                    score,
-                    title_sim,
-                    artist_sim,
-                    duration_score,
-                )
-
-                if score > best_score:
-                    best_score = score
-                    best_result = result.get("id")
-                    best_title_sim = title_sim
-                    best_artist_sim = artist_sim
-                    successful_methods.append(method)
-
-                    async with SEARCH_METHOD_ORDER_LOCK:
-                        if method in SEARCH_METHOD_ORDER:
-                            SEARCH_METHOD_ORDER.remove(method)
-                            SEARCH_METHOD_ORDER.insert(0, method)
-
-                    if score >= CONFIDENT_SEARCH_SCORE:
-                        logger.info(
-                            "Found confident match with method %s (score=%.2f)",
-                            method,
-                            score,
-                        )
-                        break
-
-            if best_score >= CONFIDENT_SEARCH_SCORE:
-                break
-
-            # Random delay between methods to avoid rate limiting
-            await asyncio.sleep(random.uniform(0.1, 0.3))
-
-        except Exception as e:
-            if _is_youtube_rate_limit_error(e):
-                await _activate_youtube_cooldown()
-                return None
-            logger.debug("Search method %s error: %s", method, e)
-            async with SEARCH_METHOD_ORDER_LOCK:
-                if method in SEARCH_METHOD_ORDER:
-                    SEARCH_METHOD_ORDER.remove(method)
-                    SEARCH_METHOD_ORDER.append(method)
-
-    # ── 3) Validate & return best match ────────────────────────────────
-    if best_result:
-        if best_score < 0.45 or best_title_sim < 0.55 or (
-            a_name and best_artist_sim < 0.5
-        ):
-            logger.warning(
-                "Best match found but score too low "
-                "(score=%.2f, title=%.2f, artist=%.2f): %s - %s",
-                best_score,
-                best_title_sim,
-                best_artist_sim,
-                t_name,
-                a_name,
-            )
-            return None
-
-        logger.info(
-            "Search successful with methods: %s, best score: %.2f",
-            successful_methods,
-            best_score,
-        )
-        return best_result
-
-    logger.warning("No search results found for: %s - %s", t_name, a_name)
-    return None
 # ============================================================================
 # yt-dlp search
 # ============================================================================
 
-def _build_search_ydl_opts(method: int, preferred_quality: int, use_proxy: bool = True) -> dict:
+def _build_search_ydl_opts(method: str, preferred_quality: int, use_proxy: bool = True) -> dict:
     opts = dict(COMMON_OPTS)
     opts["quiet"] = True
     opts["no_warnings"] = True
@@ -572,26 +351,9 @@ def _build_search_ydl_opts(method: int, preferred_quality: int, use_proxy: bool 
 
     opts["http_headers"] = _get_random_headers()
     opts["proxy"] = PROXY if use_proxy else None
+    opts["extractor_args"] = {"youtube": {"player_client": [method]}}
 
-    # ── ONLY player_client, no js_runtimes / remote_components ──
-    if method == 8:
-        opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-    elif method == 2:
-        opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-    elif method == 3:
-        opts["extractor_args"] = {
-            "youtube": {"player_client": ["web", "mweb", "android_vr"]}
-        }
-    elif method == 4:
-        opts["extractor_args"] = {"youtube": {"player_client": ["mweb"]}}
-    elif method == 5:
-        opts["extractor_args"] = {"youtube": {"player_client": ["android_vr"]}}
-    elif method == 6:
-        opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-    elif method == 7:
-        opts["extractor_args"] = {"youtube": {"player_client": ["mweb"]}}
-    elif method == 1:
-        opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+    if method == "android":
         opts["http_headers"]["User-Agent"] = (
             "Mozilla/5.0 (Linux; Android 12; SM-S906N Build/QP1A.190711.020) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
@@ -599,17 +361,133 @@ def _build_search_ydl_opts(method: int, preferred_quality: int, use_proxy: bool 
     return opts
 
 
-def _search_with_ytdlp(search_query: str, method: int, use_proxy: bool = True) -> list[dict]:
+def _search_with_ytdlp(search_query: str, method: str, use_proxy: bool = True) -> list[dict]:
     try:
         opts = _build_search_ydl_opts(method, 128, use_proxy=use_proxy)
         with yt_dlp.YoutubeDL(opts) as ydl:
-            search_url = f"ytsearch5:{search_query}"
-            info = ydl.extract_info(search_url, download=False)
-            if info and "entries" in info and info["entries"]:
+            info = ydl.extract_info(f"ytsearch5:{search_query}", download=False)
+            if info and info.get("entries"):
                 return [e for e in info["entries"] if isinstance(e, dict)]
     except Exception as e:
         logger.debug("Search method %s failed: %s", method, e)
     return []
+
+
+# ============================================================================
+# High-level search
+# ============================================================================
+
+async def search_youtube_track(
+    t_name: str, a_name: str, collection_name: str,
+    ye: str, target_duration_ms: int = 0,
+) -> Optional[str]:
+    if OFFLINE_MODE:
+        logger.info("Offline mode: skipping YouTube search")
+        return None
+
+    async with _YOUTUBE_RATE_LIMIT_LOCK:
+        if time.monotonic() < _YOUTUBE_RATE_LIMIT_UNTIL:
+            logger.warning("YouTube rate-limit cooldown is active; skipping search")
+            return None
+
+    # ── 1) YTMusic first (fast) ──────────────────────────────────
+    try:
+        loop = asyncio.get_event_loop()
+        ytmusic_id = await loop.run_in_executor(
+            None, _sync_search_youtube,
+            t_name, a_name, collection_name, ye, target_duration_ms, bool(PROXY),
+        )
+        if ytmusic_id:
+            logger.info("✅ YTMusic search successful: %s", ytmusic_id)
+            return ytmusic_id
+    except Exception as e:
+        if _is_youtube_rate_limit_error(e):
+            await _activate_youtube_cooldown()
+            return None
+        logger.debug("YTMusic search failed: %s", e)
+
+    # ── 2) yt-dlp fallback ───────────────────────────────────────
+    search_query = f"{t_name} {a_name}".strip()
+    if collection_name:
+        search_query += f" {collection_name}"
+
+    best_result: Optional[str] = None
+    best_score = -1.0
+    best_title_sim = 0.0
+    best_artist_sim = 0.0
+    successful_methods: list[str] = []
+
+    async with SEARCH_METHOD_ORDER_LOCK:
+        current_order = list(SEARCH_METHOD_ORDER)
+
+    for method in current_order:
+        use_proxy = bool(PROXY)
+        logger.debug("Searching with method %s (Proxy: %s)", method, use_proxy)
+        try:
+            loop = asyncio.get_event_loop()
+            results = await loop.run_in_executor(
+                None, _search_with_ytdlp, search_query, method, use_proxy
+            )
+            for result in results:
+                if not result.get("id"):
+                    continue
+                artist_text = (
+                    f"{result.get('channel', '')} {result.get('uploader', '')}"
+                ).strip()
+                if not _has_strong_title_artist_match(
+                    result.get("title", ""), artist_text, t_name, a_name
+                ):
+                    continue
+
+                score, title_sim, artist_sim, duration_score = _calculate_relevance_score(
+                    result, t_name, a_name, collection_name, ye, target_duration_ms
+                )
+                logger.debug(
+                    "Method %s found %r (score=%.2f, title=%.2f, artist=%.2f, dur=%.2f)",
+                    method, result.get("title", "N/A"),
+                    score, title_sim, artist_sim, duration_score,
+                )
+
+                if score > best_score:
+                    best_score = score
+                    best_result = result.get("id")
+                    best_title_sim = title_sim
+                    best_artist_sim = artist_sim
+                    successful_methods.append(method)
+                    async with SEARCH_METHOD_ORDER_LOCK:
+                        if method in SEARCH_METHOD_ORDER:
+                            SEARCH_METHOD_ORDER.remove(method)
+                            SEARCH_METHOD_ORDER.insert(0, method)
+                    if score >= CONFIDENT_SEARCH_SCORE:
+                        logger.info("Confident match with %s (score=%.2f)", method, score)
+                        break
+            if best_score >= CONFIDENT_SEARCH_SCORE:
+                break
+            await asyncio.sleep(random.uniform(0.1, 0.3))
+        except Exception as e:
+            if _is_youtube_rate_limit_error(e):
+                await _activate_youtube_cooldown()
+                return None
+            logger.debug("Search method %s error: %s", method, e)
+            async with SEARCH_METHOD_ORDER_LOCK:
+                if method in SEARCH_METHOD_ORDER:
+                    SEARCH_METHOD_ORDER.remove(method)
+                    SEARCH_METHOD_ORDER.append(method)
+
+    if best_result:
+        if best_score < 0.45 or best_title_sim < 0.55 or (
+            a_name and best_artist_sim < 0.5
+        ):
+            logger.warning(
+                "Best match too low (score=%.2f, title=%.2f, artist=%.2f): %s - %s",
+                best_score, best_title_sim, best_artist_sim, t_name, a_name,
+            )
+            return None
+        logger.info("Search OK via %s (score=%.2f)", successful_methods, best_score)
+        return best_result
+
+    logger.warning("No search results for: %s - %s", t_name, a_name)
+    return None
 
 
 # ============================================================================
@@ -621,15 +499,10 @@ _YT_DIRECT = None
 
 
 def _sync_search_youtube(
-    t_name: str,
-    a_name: str,
-    collection_name: str,
-    ye: str,
-    target_duration_ms: int = 0,
-    use_proxy: bool = True,
+    t_name: str, a_name: str, collection_name: str, ye: str,
+    target_duration_ms: int = 0, use_proxy: bool = True,
 ) -> Optional[str]:
     global _YT_PROXIED, _YT_DIRECT
-
     if use_proxy and PROXY:
         if _YT_PROXIED is None:
             _YT_PROXIED = YTMusic(proxies={"https": PROXY, "http": PROXY})
@@ -640,7 +513,6 @@ def _sync_search_youtube(
         yt = _YT_DIRECT
 
     search_query = f"{t_name} {a_name} {collection_name}".strip()
-
     try:
         results = yt.search(search_query, filter="songs", limit=10)
         if not results or not isinstance(results, list):
@@ -675,14 +547,11 @@ def _sync_search_youtube(
                 upload_date=str(res_year)[:4] if res_year else "",
                 duration_sec=duration_sec,
                 description="",
-                t_name=t_name,
-                a_name=a_name,
-                collection_name=collection_name,
-                ye=ye,
+                t_name=t_name, a_name=a_name,
+                collection_name=collection_name, ye=ye,
                 target_duration_ms=target_duration_ms,
                 is_official_channel=True,
             )
-
             if score > highest_score:
                 highest_score = score
                 best_match_id = res.get("videoId")
@@ -697,19 +566,13 @@ def _sync_search_youtube(
                 or (a_name and best_artist_sim < 0.5)
             ):
                 logger.warning(
-                    "YTMusic best match score too low "
-                    "(score: %.2f, title_sim: %.2f, artist_sim: %.2f, dur: %.2f)",
-                    highest_score,
-                    best_title_sim,
-                    best_artist_sim,
-                    best_duration_score,
+                    "YTMusic best too low (score=%.2f, title=%.2f, artist=%.2f, dur=%.2f)",
+                    highest_score, best_title_sim, best_artist_sim, best_duration_score,
                 )
                 return None
-
         return best_match_id
     except Exception as e:
         logger.error("YTMusic search error: %s", e)
-
     return None
 
 
@@ -728,21 +591,17 @@ def get_artist_image(artist_name):
         search_results = yt.search(artist_name, filter="artists", limit=1)
         if not search_results or not isinstance(search_results, list):
             return None
-
         artist_id = search_results[0].get("browseId")
         if not artist_id:
             return None
-
         artist_info = yt.get_artist(artist_id)
         if not artist_info or not isinstance(artist_info, dict):
             return None
-
         thumbnails = artist_info.get("thumbnails")
         if thumbnails and isinstance(thumbnails, list) and len(thumbnails) > 0:
             return thumbnails[-1].get("url")
     except Exception as e:
         logger.error("YTMusic get_artist_image error for '%s': %s", artist_name, e)
-
     return None
 
 
@@ -761,10 +620,7 @@ async def download_audio(
     preferred_quality = quality
     url = _normalize_url(url)
 
-    if output_dir is None:
-        base_dir = os.path.join(os.getcwd(), "downloads")
-    else:
-        base_dir = output_dir
+    base_dir = output_dir or os.path.join(os.getcwd(), "downloads")
     os.makedirs(base_dir, exist_ok=True)
 
     unique_id = uuid.uuid4().hex
@@ -772,8 +628,6 @@ async def download_audio(
     os.makedirs(unique_dir, exist_ok=True)
 
     logger.info("Starting download: %s", url)
-    logger.info("Unique output directory: %s", unique_dir)
-
     before = set(Path(unique_dir).glob("*.mp3"))
     loop = asyncio.get_event_loop()
 
@@ -783,20 +637,14 @@ async def download_audio(
     for method in current_order:
         for attempt in range(1, max_retries_per_method + 1):
             use_proxy = bool(PROXY)
-            logger.info(
-                "▶ Try Method %d (Attempt %d, Proxy: %s)", method, attempt, use_proxy
-            )
+            logger.info("▶ Try %s (Attempt %d, Proxy: %s)", method, attempt, use_proxy)
             try:
-                opts = _build_opts(
-                    method, unique_dir, preferred_quality, use_proxy=use_proxy
-                )
+                opts = _build_opts(method, unique_dir, preferred_quality, use_proxy=use_proxy)
                 if progress_callback:
-
                     def report_progress(status: dict) -> None:
                         percent = _download_progress_percent(status)
                         if percent is not None:
                             progress_callback(percent)
-
                     opts["progress_hooks"] = [report_progress]
 
                 def run_ydl():
@@ -807,20 +655,16 @@ async def download_audio(
                     await loop.run_in_executor(None, run_ydl)
 
             except Exception as exc:
-                logger.warning("Method %d failed: %s", method, exc)
-                # ── Debug hint for format errors ──
+                logger.warning("Method %s failed: %s", method, exc)
                 if "requested format is not available" in str(exc).lower():
                     _debug_dump_formats(url, method)
                     logger.info(
-                        "Hint: set YT_DEBUG_FORMATS=1 to see which formats "
-                        "the player_client '%s' actually returned",
-                        _client_for(method),
+                        "Hint: set YT_DEBUG_FORMATS=1 to see returned formats "
+                        "for client '%s'", method,
                     )
                 if _is_youtube_rate_limit_error(exc):
                     await _activate_youtube_cooldown()
-                    logger.error(
-                        "YouTube rate limit detected; stopping fallback methods for this download"
-                    )
+                    logger.error("Rate limit; stopping fallbacks for this URL")
                     break
                 async with METHOD_ORDER_LOCK:
                     if method in METHOD_ORDER:
@@ -833,53 +677,28 @@ async def download_audio(
             new_files = after - before
             if new_files:
                 mp3_path = max(new_files, key=lambda p: p.stat().st_mtime)
-                size_mb = mp3_path.stat().st_size / (1024 * 1024)
                 logger.info(
-                    "✅ Success with method %d → %s (%.1f MB)",
-                    method,
-                    mp3_path.name,
-                    size_mb,
+                    "✅ Success with %s → %s (%.1f MB)",
+                    method, mp3_path.name, mp3_path.stat().st_size / (1024 * 1024),
                 )
                 async with METHOD_ORDER_LOCK:
                     if method in METHOD_ORDER:
                         METHOD_ORDER.remove(method)
                         METHOD_ORDER.insert(0, method)
                 return str(mp3_path)
-            else:
-                logger.warning(
-                    "Method %d completed but no MP3 found – retrying…", method
-                )
-                await asyncio.sleep(random.uniform(0.3, 0.7))
 
-    try:
-        shutil.rmtree(unique_dir, ignore_errors=True)
-    except Exception:
-        pass
+            logger.warning("Method %s finished but no MP3 – retrying…", method)
+            await asyncio.sleep(random.uniform(0.3, 0.7))
+
+    shutil.rmtree(unique_dir, ignore_errors=True)
     msg = f"❌ All download methods failed for: {url}"
     logger.error(msg)
     raise Exception(msg)
 
 
-def _client_for(method: int) -> str:
-    return {
-        8: "web",
-        2: "web",
-        3: "web,mweb,android_vr",
-        4: "mweb",
-        5: "android_vr",
-        6: "web",
-        7: "mweb",
-        1: "android",
-    }.get(method, "unknown")
-
-
 def _is_youtube_rate_limit_error(error: BaseException) -> bool:
-    message = str(error).lower()
-    return (
-        "rate-limited" in message
-        or "rate limit" in message
-        or "too many requests" in message
-    )
+    m = str(error).lower()
+    return "rate-limited" in m or "rate limit" in m or "too many requests" in m
 
 
 def _download_progress_percent(status: dict) -> Optional[float]:
@@ -914,54 +733,29 @@ def _normalize_url(url: str) -> str:
     return url
 
 
-def _build_opts(
-    method: int, output_dir: str, preferred_quality: int, use_proxy: bool = True
-) -> dict:
+def _build_opts(method: str, output_dir: str, preferred_quality: int, use_proxy: bool = True) -> dict:
     opts = dict(COMMON_OPTS)
     opts["outtmpl"] = f"{output_dir}/%(title)s.%(ext)s"
-    # More forgiving than "bestaudio/best": try audio-only, then merged video+audio,
-    # then any combined file.
-    opts["format"] = "bestaudio*/bestvideo*+bestaudio/best"
+    # Critical: fall back to a combined file when audio-only is SABR-gated.
+    opts["format"] = "bv*+ba/b"
 
     cookies_path = _get_cookies_path()
     if cookies_path:
         opts["cookiefile"] = cookies_path
-        logger.debug("Using cookies from: %s", cookies_path)
     else:
         logger.debug("No cookies.txt found, proceeding without cookies")
 
-    opts["postprocessors"] = [
-        {
-            **AUDIO_POSTPROCESSOR,
-            "preferredquality": str(preferred_quality),
-        }
-    ]
-
+    opts["postprocessors"] = [{
+        **AUDIO_POSTPROCESSOR,
+        "preferredquality": str(preferred_quality),
+    }]
     opts["proxy"] = PROXY if use_proxy else None
     opts["http_headers"] = _get_random_headers()
+    opts["extractor_args"] = {"youtube": {"player_client": [method]}}
 
-    # ── ONLY player_client, no js_runtimes / remote_components ──
-    if method == 8:
-        opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-    elif method == 2:
-        opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-    elif method == 3:
-        opts["extractor_args"] = {
-            "youtube": {"player_client": ["web", "mweb", "android_vr"]}
-        }
-    elif method == 4:
-        opts["extractor_args"] = {"youtube": {"player_client": ["mweb"]}}
-    elif method == 5:
-        opts["extractor_args"] = {"youtube": {"player_client": ["android_vr"]}}
-    elif method == 6:
-        opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-    elif method == 7:
-        opts["extractor_args"] = {"youtube": {"player_client": ["mweb"]}}
-    elif method == 1:
-        opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+    if method == "android":
         opts["http_headers"]["User-Agent"] = (
             "Mozilla/5.0 (Linux; Android 12; SM-S906N Build/QP1A.190711.020) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
         )
-
     return opts
