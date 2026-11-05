@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 */.30 * * *"
+    - cron: "30 * * * *"
 
 concurrency:
   group: musicman-workers-${{ github.ref }}
