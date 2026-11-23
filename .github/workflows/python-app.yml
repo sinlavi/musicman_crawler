@@ -11,7 +11,7 @@ jobs:
   worker:
     name: Worker ${{ inputs.instance }}
     runs-on: ubuntu-latest
-    timeout-minutes: 65   # safety net; the next hourly run cancels this one at ~60 min
+    timeout-minutes: 65
     permissions:
       contents: read
     env:
