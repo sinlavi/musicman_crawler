@@ -1,25 +1,17 @@
-name: MusicMan Workers
+name: MusicMan Worker (reusable)
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "*/30 * * * *"
-
-concurrency:
-  group: musicman-workers-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
+    inputs:
+      instance:
+        required: true
+        type: number
 
 jobs:
   worker:
-    name: Worker ${{ matrix.instance }}
+    name: Worker ${{ inputs.instance }}
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        instance: [1, 2, 3]
+    timeout-minutes: 65   # safety net; the next hourly run cancels this one at ~60 min
     permissions:
       contents: read
     env:
@@ -33,7 +25,7 @@ jobs:
       PROXY: socks5h://127.0.0.1:1080
       OFFLINE_MODE: ${{ secrets.OFFLINE_MODE }}
       INFO_CHANNEL_ID: ${{ secrets.INFO_CHANNEL_ID }}
-      INSTANCE_ID: ${{ matrix.instance }}
+      INSTANCE_ID: ${{ inputs.instance }}
       TOTAL_INSTANCES: 3
       PYTHONUNBUFFERED: "1"
 
@@ -65,8 +57,8 @@ jobs:
           url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$archive"
           wget --timeout=60 --tries=3 --retry-connrefused --no-verbose "$url"
           tar -xf "$archive"
-          install -m 0755 ffmpeg-master-latest-linux64-gpl/bin/ffmpeg /usr/local/bin/ffmpeg
-          install -m 0755 ffmpeg-master-latest-linux64-gpl/bin/ffprobe /usr/local/bin/ffprobe
+          sudo install -m 0755 ffmpeg-master-latest-linux64-gpl/bin/ffmpeg /usr/local/bin/ffmpeg
+          sudo install -m 0755 ffmpeg-master-latest-linux64-gpl/bin/ffprobe /usr/local/bin/ffprobe
           rm -rf ffmpeg-master-latest-linux64-gpl "$archive"
 
       - name: Verify FFmpeg
@@ -131,9 +123,9 @@ jobs:
             cache
             .cache
             ~/.cache/yt-dlp
-          key: crawler-${{ runner.os }}-${{ matrix.instance }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          key: crawler-${{ runner.os }}-${{ inputs.instance }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
           restore-keys: |
-            crawler-${{ runner.os }}-${{ matrix.instance }}-
+            crawler-${{ runner.os }}-${{ inputs.instance }}-
             crawler-${{ runner.os }}-
 
       - name: Install dependencies
