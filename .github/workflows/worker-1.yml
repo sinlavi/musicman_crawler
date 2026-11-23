@@ -2,18 +2,14 @@ name: MusicMan Worker 1
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  # Keep the schedule only if you want a fallback. When auto‑restart is active,
-  # the schedule can queue extra runs and cause overlap.
-  # schedule:
-  #   - cron: "10 * * * *"
+  schedule:
+    - cron: "0 * * * *"
+  # push:
+  #   branches: [main]
 
 concurrency:
   group: musicman-worker-1
-  # Do NOT cancel the running job when the next run is triggered.
-  # Otherwise the auto‑restart would cancel the very run that dispatched it.
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run:
@@ -21,18 +17,3 @@ jobs:
     with:
       instance: 1
     secrets: inherit
-
-  restart:
-    needs: run
-    # Restart on success, failure, or timeout, but not if the user cancels.
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger next run
-        env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
-        run: |
-          # Optional short delay to avoid tight restart loops when the worker
-          # finishes very quickly (e.g. no work available).
-          sleep 60
-          gh workflow run worker-1.yml --ref main
