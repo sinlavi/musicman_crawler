@@ -1,0 +1,19 @@
+name: MusicMan Worker 1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 * * * *"
+
+concurrency:
+  group: musicman-worker-1
+  cancel-in-progress: true
+
+jobs:
+  run:
+    uses: ./.github/workflows/musicman-worker.yml
+    with:
+      instance: 1
+    secrets: inherit
