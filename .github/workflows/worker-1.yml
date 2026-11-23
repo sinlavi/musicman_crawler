@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 * * * *"
-  # push:
-  #   branches: [main]
+  push:
+      branches: [main]
 
 concurrency:
   group: musicman-worker-1
