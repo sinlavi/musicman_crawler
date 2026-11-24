@@ -1,15 +1,19 @@
+
 name: MusicMan Worker 3
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"      # every hour at minute 0 (UTC)
+    - cron: "*/30 * * * *"
   push:
     branches: [main]
 
 concurrency:
   group: musicman-worker-3
-  cancel-in-progress: false   # let the running worker finish; the next run queues behind it
+  cancel-in-progress: false
+
+permissions:
+  actions: write
 
 jobs:
   run:
@@ -17,3 +21,51 @@ jobs:
     with:
       instance: 3
     secrets: inherit
+
+  retry:
+    needs: run
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Automatically restart on failure
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          gh workflow run "MusicMan Worker 3" --ref main
+
+  cleanup:
+    needs: [run, retry]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "Cleaning old MusicMan Worker 3 runs..."
+
+          OLD_RUNS=$(gh run list \
+            --workflow "MusicMan Worker 3" \
+            --limit 1000 \
+            --json databaseId,status,createdAt \
+            --jq '
+              map(select(.status == "completed"))
+              | sort_by(.createdAt)
+              | reverse
+              | .[10:]
+              | .[].databaseId
+            ')
+
+          if [ -z "$OLD_RUNS" ]; then
+            echo "Nothing to clean."
+            exit 0
+          fi
+
+          while IFS= read -r RUN_ID; do
+            [ -z "$RUN_ID" ] && continue
+            echo "Deleting run: $RUN_ID"
+            gh run delete "$RUN_ID" --repo "$GH_REPO" || true
+          done <<< "$OLD_RUNS"
+
+          echo "Cleanup completed."
