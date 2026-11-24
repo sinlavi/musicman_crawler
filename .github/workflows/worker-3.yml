@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: musicman-worker-3
-  cancel-in-progress: false   # see note below
+  cancel-in-progress: false   # let the running worker finish; the next run queues behind it
 
 jobs:
   run:
