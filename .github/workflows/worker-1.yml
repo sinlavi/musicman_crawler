@@ -3,13 +3,10 @@ name: MusicMan Worker 1
 
 on:
   workflow_dispatch:
-
   schedule:
-    - cron: "*/30 * * * *"
-
+    - cron: "0 * * * *"
   push:
-    branches:
-      - main
+    branches: [main]
 
 concurrency:
   group: musicman-worker-1
@@ -20,36 +17,14 @@ permissions:
   actions: write
 
 jobs:
-  run:
-    uses: ./.github/workflows/musicman-worker.yml
-    with:
-      instance: 1
-    secrets: inherit
-
-  retry:
-    needs: run
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Automatically restart on failure
-        env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
-        run: |
-          gh workflow run "MusicMan Worker 1" --ref main
-
   cleanup:
-    needs: [run, retry]
-    if: always()
     runs-on: ubuntu-latest
-
     steps:
       - name: Delete old workflow runs
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           GH_REPO: ${{ github.repository }}
         run: |
-          echo "Cleaning old MusicMan Worker 1 runs..."
-
           OLD_RUNS=$(gh run list \
             --workflow "MusicMan Worker 1" \
             --limit 1000 \
@@ -62,16 +37,25 @@ jobs:
               | .[].databaseId
             ')
 
-          if [ -z "$OLD_RUNS" ]; then
-            echo "Nothing to clean."
-            exit 0
-          fi
-
           while IFS= read -r RUN_ID; do
             [ -z "$RUN_ID" ] && continue
-
-            echo "Deleting old run: $RUN_ID"
             gh run delete "$RUN_ID" --repo "$GH_REPO" || true
           done <<< "$OLD_RUNS"
 
-          echo "Cleanup completed."
+  run:
+    needs: cleanup
+    uses: ./.github/workflows/musicman-worker.yml
+    with:
+      instance: 1
+    secrets: inherit
+
+  retry:
+    needs: run
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restart on failure
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          gh workflow run "MusicMan Worker 1" --ref main
