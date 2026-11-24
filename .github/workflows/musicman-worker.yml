@@ -11,7 +11,7 @@ jobs:
   worker:
     name: Worker ${{ inputs.instance }}
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -145,16 +145,35 @@ jobs:
           echo "YouTube cookies.txt is present"
 
       - name: Run worker
+        env:
+          RUN_BUDGET_SECONDS: 3000
         run: |
+          set -uo pipefail
+          deadline=$(( $(date +%s) + RUN_BUDGET_SECONDS ))
           while true; do
-            if python main.py; then
+            remaining=$(( deadline - $(date +%s) ))
+            if (( remaining <= 60 )); then
+              echo "Time budget exhausted; exiting cleanly."
               exit 0
-            else
-              status=$?
             fi
-            if [[ "$status" -ne 75 ]]; then
-              exit "$status"
-            fi
-            echo "::warning::Worker requested a restart; restarting crawler..."
-            sleep 30
+            timeout --signal=TERM "${remaining}s" python main.py
+            status=$?
+            case "$status" in
+              0)
+                echo "Worker finished normally."
+                exit 0
+                ;;
+              75)
+                echo "::warning::Worker requested a restart; restarting crawler..."
+                sleep 30
+                ;;
+              124)
+                echo "Worker hit the run budget; exiting cleanly."
+                exit 0
+                ;;
+              *)
+                echo "::error::Worker failed with exit code $status"
+                exit "$status"
+                ;;
+            esac
           done
