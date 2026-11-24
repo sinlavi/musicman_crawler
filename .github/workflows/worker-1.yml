@@ -3,16 +3,20 @@ name: MusicMan Worker 1
 
 on:
   workflow_dispatch:
+
   schedule:
     - cron: "*/30 * * * *"
+
   push:
-    branches: [main]
+    branches:
+      - main
 
 concurrency:
   group: musicman-worker-1
   cancel-in-progress: false
 
 permissions:
+  contents: read
   actions: write
 
 jobs:
