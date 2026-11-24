@@ -3,16 +3,20 @@ name: MusicMan Worker 3
 
 on:
   workflow_dispatch:
+
   schedule:
     - cron: "*/30 * * * *"
+
   push:
-    branches: [main]
+    branches:
+      - main
 
 concurrency:
   group: musicman-worker-3
   cancel-in-progress: false
 
 permissions:
+  contents: read
   actions: write
 
 jobs:
@@ -37,6 +41,7 @@ jobs:
     needs: [run, retry]
     if: always()
     runs-on: ubuntu-latest
+
     steps:
       - name: Delete old workflow runs
         env:
@@ -64,7 +69,8 @@ jobs:
 
           while IFS= read -r RUN_ID; do
             [ -z "$RUN_ID" ] && continue
-            echo "Deleting run: $RUN_ID"
+
+            echo "Deleting old run: $RUN_ID"
             gh run delete "$RUN_ID" --repo "$GH_REPO" || true
           done <<< "$OLD_RUNS"
 
