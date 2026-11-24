@@ -11,7 +11,7 @@ jobs:
   worker:
     name: Worker ${{ inputs.instance }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 65
     permissions:
       contents: read
     env:
@@ -30,6 +30,9 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
     steps:
+      - name: Record job start
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -146,17 +149,17 @@ jobs:
 
       - name: Run worker
         env:
-          RUN_BUDGET_SECONDS: 3000
+          RUN_BUDGET_SECONDS: 3480   # 58 min from job start; leaves margin before the next hourly run
         run: |
           set -uo pipefail
-          deadline=$(( $(date +%s) + RUN_BUDGET_SECONDS ))
+          deadline=$(( JOB_START + RUN_BUDGET_SECONDS ))
           while true; do
             remaining=$(( deadline - $(date +%s) ))
-            if (( remaining <= 60 )); then
-              echo "Time budget exhausted; exiting cleanly."
+            if (( remaining <= 30 )); then
+              echo "Hourly time budget reached; exiting so the next scheduled run takes over."
               exit 0
             fi
-            timeout --signal=TERM "${remaining}s" python main.py
+            timeout --signal=TERM --kill-after=20s "${remaining}s" python main.py
             status=$?
             case "$status" in
               0)
@@ -167,13 +170,13 @@ jobs:
                 echo "::warning::Worker requested a restart; restarting crawler..."
                 sleep 30
                 ;;
-              124)
+              124|137)
                 echo "Worker hit the run budget; exiting cleanly."
                 exit 0
                 ;;
               *)
-                echo "::error::Worker failed with exit code $status"
-                exit "$status"
+                echo "::warning::Worker crashed with exit code $status; restarting in 60s..."
+                sleep 60
                 ;;
             esac
           done
