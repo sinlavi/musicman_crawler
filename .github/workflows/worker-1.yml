@@ -3,13 +3,13 @@ name: MusicMan Worker 1
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 * * * *"      # every hour at minute 0 (UTC)
   push:
-      branches: [main]
+    branches: [main]
 
 concurrency:
   group: musicman-worker-1
-  cancel-in-progress: true
+  cancel-in-progress: false   # see note below
 
 jobs:
   run:
