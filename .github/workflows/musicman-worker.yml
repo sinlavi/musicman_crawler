@@ -11,7 +11,7 @@ jobs:
   worker:
     name: Worker ${{ inputs.instance }}
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
